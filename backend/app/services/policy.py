@@ -24,6 +24,16 @@ def policy_report(content: dict[str, Any], rights: dict[str, str] | None = None)
     }
     missing_rights = [asset for asset, status in rights.items() if status in {"unknown", "unverified", "missing"}]
     blocking = violations + [f"rights_not_verified:{asset}" for asset in missing_rights]
+    source_media = content.get("source_media") if isinstance(content, dict) else None
+    source_declaration = None
+    if isinstance(source_media, dict):
+        source_declaration = {
+            "rights_status": source_media.get("rights_status"),
+            "rights_owner": source_media.get("rights_owner"),
+            "license_reference": source_media.get("license_reference"),
+            "allow_full_reuse": bool(source_media.get("allow_full_reuse")),
+            "sha256": source_media.get("sha256"),
+        }
     return {
         "passed": not blocking,
         "checks": {
@@ -35,6 +45,7 @@ def policy_report(content: dict[str, Any], rights: dict[str, str] | None = None)
             "technical": "pending_media_validation",
         },
         "rights": rights,
+        "source_media_declaration": source_declaration,
         "blocking_reasons": blocking,
         "ruleset_version": "local-policy-v1",
     }

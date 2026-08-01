@@ -115,8 +115,13 @@ class ProviderConfigRequest(BaseModel):
 
 class PublishRequest(BaseModel):
     platform: Platform
+    platform_account_id: str | None = None
     schedule_at: datetime | None = None
     simulate: bool = True
+
+
+class PermanentDeleteRequest(BaseModel):
+    confirmation: Literal["DELETE"]
 
 
 class APIModel(BaseModel):

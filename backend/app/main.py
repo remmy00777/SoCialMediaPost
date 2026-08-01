@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import secrets
 import time
 from collections import defaultdict, deque
@@ -18,14 +17,12 @@ from app.api.router import router, seed_defaults
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.logging import configure_logging
-from app.core.security import hash_password
 from app.models import BrandProfile, User
 from app.services.storage import StorageManager
 
 
 settings = get_settings()
 configure_logging()
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -33,24 +30,6 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     StorageManager(settings).initialize()
     with SessionLocal() as db:
-        existing_user = db.execute(select(User)).scalars().first()
-
-        if not existing_user:
-            administrator = User(
-                email=settings.admin_email,
-                password_hash=hash_password(settings.admin_password),
-                is_admin=True,
-            )
-            db.add(administrator)
-            db.flush()
-
-            db.add(
-                BrandProfile(
-                    user_id=administrator.id,
-                    approved=settings.demo_mode,
-                )
-            )
-
         seed_defaults(db)
         db.commit()
     yield
@@ -79,7 +58,6 @@ rate_buckets: dict[str, deque[float]] = defaultdict(deque)
 @app.middleware("http")
 async def security_and_rate_limit(request: Request, call_next):
     correlation_id = request.headers.get("X-Correlation-ID") or secrets.token_hex(12)
-    request.state.correlation_id = correlation_id
     client = request.client.host if request.client else "local"
     now = time.monotonic()
     bucket = rate_buckets[client]
@@ -103,26 +81,10 @@ async def security_and_rate_limit(request: Request, call_next):
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
-    logger.exception(
-        "Unhandled application error",
-        extra={
-            "context": {
-                "correlation_id": correlation_id,
-                "method": request.method,
-                "path": request.url.path,
-                "error_type": type(exc).__name__,
-            }
-        },
-    )
+async def unhandled_exception(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "An unexpected error occurred",
-            "error_type": type(exc).__name__,
-            "correlation_id": correlation_id,
-        },
+        content={"detail": "An unexpected error occurred", "error_type": type(exc).__name__},
     )
 
 

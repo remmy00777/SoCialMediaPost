@@ -13,18 +13,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import CSRF_COOKIE, SESSION_COOKIE, csrf_protected, current_user
 from app.core.config import get_settings
 from app.core.db import engine, get_db
 from app.core.logging import redact
-from app.core.security import SecretBox, SessionSigner, generate_csrf_token, hash_password, verify_password
+from app.core.security import SecretBox, SessionSigner, generate_csrf_token, hash_password, secure_filename, verify_password
 from app.models import (
     AccountMetricSnapshot,
     ApprovalRecord,
@@ -34,15 +34,20 @@ from app.models import (
     ContentPackage,
     ErrorEvent,
     Experiment,
+    ExperimentAssignment,
+    GeneratedAsset,
     Notification,
     OAuthCredential,
+    OriginalityCheck,
     PlatformAccount,
     PlatformPost,
     PlatformVariant,
+    PolicyCheck,
     PostMetricSnapshot,
     ProviderConfiguration,
     PublicationJob,
     Schedule,
+    SourceMediaAsset,
     SourceMetric,
     SourceVideo,
     SystemSetting,
@@ -60,6 +65,7 @@ from app.schemas import (
     ExperimentRequest,
     ImportVideoRequest,
     LoginRequest,
+    PermanentDeleteRequest,
     ProviderConfigRequest,
     PublishRequest,
     ScheduleRequest,
@@ -67,6 +73,7 @@ from app.schemas import (
 from app.services.analytics import multi_objective_performance, normalized_post_metrics
 from app.services.audit import record_audit
 from app.services.experiments import deterministic_assignment
+from app.services.media_validation import probe_media
 from app.services.storage import PLATFORM_DISPLAY, StorageManager
 from app.services.workflow import WorkflowService
 from app.services.publication import PublicationService, PublicationBlocked
@@ -320,13 +327,201 @@ def import_trend(payload: ImportVideoRequest, db: Session = Depends(get_db), _: 
     return {"candidate_id": candidate.id, "video_id": source.id, "score": score_result.model_dump()}
 
 
+AUTHORIZED_SOURCE_RIGHTS = {"user_owned", "licensed", "public_domain", "explicit_permission"}
+ALLOWED_SOURCE_MIME_TYPES = {"video/mp4", "video/quicktime", "video/webm", "video/x-m4v"}
+ALLOWED_SOURCE_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}
+
+
+@router.get("/trends/{candidate_id}/source-media")
+def get_source_media(
+    candidate_id: str,
+    db: Session = Depends(get_db),
+    _: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    candidate = db.get(TrendCandidate, candidate_id)
+    if not candidate:
+        raise HTTPException(404, "Trend candidate not found")
+    asset = db.execute(
+        select(SourceMediaAsset)
+        .where(
+            SourceMediaAsset.source_video_id == candidate.source_video_id,
+            SourceMediaAsset.deleted_at.is_(None),
+        )
+        .order_by(desc(SourceMediaAsset.created_at))
+    ).scalars().first()
+    return {"source_media": serialize_model(asset) if asset else None}
+
+
+@router.post("/trends/{candidate_id}/source-media", dependencies=[Depends(csrf_protected)])
+async def upload_source_media(
+    candidate_id: str,
+    file: UploadFile = File(...),
+    rights_status: str = Form(...),
+    rights_owner: str = Form(...),
+    license_reference: str | None = Form(None),
+    allow_full_reuse: bool = Form(False),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    candidate = db.get(TrendCandidate, candidate_id)
+    if not candidate:
+        raise HTTPException(404, "Trend candidate not found")
+    if rights_status not in AUTHORIZED_SOURCE_RIGHTS:
+        raise HTTPException(422, "Rights status must be user_owned, licensed, public_domain, or explicit_permission")
+    if not allow_full_reuse:
+        raise HTTPException(422, "Full reuse must be explicitly authorized before the source clip can be included")
+    if rights_status in {"licensed", "public_domain", "explicit_permission"} and not license_reference:
+        raise HTTPException(422, "A license, public-domain, or permission reference is required")
+    if not rights_owner.strip():
+        raise HTTPException(422, "Rights owner is required")
+
+    original_name = secure_filename(file.filename or "source.mp4")
+    suffix = Path(original_name).suffix.lower()
+    mime_type = (file.content_type or "").lower()
+    if suffix not in ALLOWED_SOURCE_SUFFIXES or mime_type not in ALLOWED_SOURCE_MIME_TYPES:
+        raise HTTPException(415, "Only MP4, MOV, M4V, or WebM video uploads are accepted")
+
+    directory = storage.source_media_dir(candidate_id)
+    destination = storage.ensure_inside_root(directory / f"source-{secrets.token_hex(8)}{suffix}")
+    temporary = storage.ensure_inside_root(directory / f".{destination.name}.uploading")
+    size = 0
+    try:
+        with temporary.open("wb") as handle:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.source_media_max_bytes:
+                    raise HTTPException(413, "Source media exceeds the configured upload limit")
+                handle.write(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+
+    validation = probe_media(destination)
+    duration = float(validation.get("duration") or 0)
+    if not validation.get("valid") or duration <= 0:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(422, "Uploaded source media failed FFmpeg validation")
+    if duration > settings.source_media_max_duration_seconds:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(422, f"Source clip exceeds the {settings.source_media_max_duration_seconds}-second full-reuse limit")
+
+    existing = db.execute(
+        select(SourceMediaAsset).where(
+            SourceMediaAsset.source_video_id == candidate.source_video_id,
+            SourceMediaAsset.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    for old in existing:
+        old_path = Path(old.path)
+        try:
+            storage.ensure_inside_root(old_path).unlink(missing_ok=True)
+        except ValueError:
+            pass
+        old.deleted_at = datetime.now(UTC)
+
+    asset = SourceMediaAsset(
+        source_video_id=candidate.source_video_id,
+        uploaded_by_user_id=user.id if user else None,
+        original_filename=original_name,
+        path=str(destination),
+        mime_type=mime_type,
+        size_bytes=size,
+        sha256=storage.sha256(destination),
+        media_validation=validation,
+        rights_status=rights_status,
+        rights_owner=rights_owner.strip(),
+        license_reference=license_reference.strip() if license_reference else None,
+        allow_full_reuse=True,
+        rights_verified_at=datetime.now(UTC),
+    )
+    db.add(asset)
+    db.flush()
+    record_audit(
+        db,
+        "source_media.uploaded",
+        resource_type="source_media_asset",
+        resource_id=asset.id,
+        actor_id=user.id if user else None,
+        event_data={
+            "candidate_id": candidate_id,
+            "rights_status": rights_status,
+            "size_bytes": size,
+            "duration_seconds": duration,
+        },
+    )
+    db.commit()
+    return {"source_media": serialize_model(asset), "message": "Authorized source clip stored for voiceover-intro generation"}
+
+
+@router.delete("/trends/{candidate_id}/source-media", dependencies=[Depends(csrf_protected)])
+def delete_source_media(
+    candidate_id: str,
+    payload: PermanentDeleteRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    candidate = db.get(TrendCandidate, candidate_id)
+    if not candidate:
+        raise HTTPException(404, "Trend candidate not found")
+    assets = db.execute(
+        select(SourceMediaAsset).where(
+            SourceMediaAsset.source_video_id == candidate.source_video_id,
+            SourceMediaAsset.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    stats = {"files_deleted": 0, "bytes_freed": 0, "directories_deleted": 0}
+    parents: set[Path] = set()
+    for asset in assets:
+        try:
+            path = storage.ensure_inside_root(Path(asset.path))
+            if path.is_file():
+                stats["bytes_freed"] += path.stat().st_size
+                path.unlink()
+                stats["files_deleted"] += 1
+                parents.add(path.parent)
+        except ValueError:
+            pass
+        db.delete(asset)
+    for parent in parents:
+        try:
+            parent.rmdir()
+            stats["directories_deleted"] += 1
+        except OSError:
+            pass
+    record_audit(
+        db,
+        "source_media.permanently_deleted",
+        resource_type="trend_candidate",
+        resource_id=candidate_id,
+        actor_id=user.id if user else None,
+        event_data=stats,
+    )
+    db.commit()
+    return {"deleted": True, **stats}
+
+
 @router.get("/content-packages")
 def list_packages(db: Session = Depends(get_db), _: User | None = Depends(current_user)) -> list[dict[str, Any]]:
     packages = db.execute(select(ContentPackage).order_by(desc(ContentPackage.created_at))).scalars().all()
     result = []
     for package in packages:
         variants = db.execute(select(PlatformVariant).where(PlatformVariant.content_package_id == package.id)).scalars().all()
-        result.append({**serialize_model(package), "variants": [serialize_model(item) for item in variants]})
+        storage_bytes = db.scalar(
+            select(func.coalesce(func.sum(GeneratedAsset.size_bytes), 0)).where(GeneratedAsset.content_package_id == package.id)
+        ) or 0
+        result.append(
+            {
+                **serialize_model(package),
+                "storage_bytes": int(storage_bytes),
+                "variants": [serialize_model(item) for item in variants],
+            }
+        )
     return result
 
 
@@ -338,6 +533,95 @@ def package_detail(package_id: str, db: Session = Depends(get_db), _: User | Non
     variants = db.execute(select(PlatformVariant).where(PlatformVariant.content_package_id == package.id)).scalars().all()
     approvals = db.execute(select(ApprovalRecord).where(ApprovalRecord.content_package_id == package.id)).scalars().all()
     return {**serialize_model(package), "variants": [serialize_model(item) for item in variants], "approvals": [serialize_model(item) for item in approvals]}
+
+
+@router.delete("/content-packages/{package_id}/permanent", dependencies=[Depends(csrf_protected)])
+def permanently_delete_package(
+    package_id: str,
+    payload: PermanentDeleteRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    package = db.get(ContentPackage, package_id)
+    if not package:
+        raise HTTPException(404, "Content package not found")
+
+    variant_ids = list(
+        db.execute(
+            select(PlatformVariant.id).where(PlatformVariant.content_package_id == package_id)
+        ).scalars()
+    )
+    jobs = (
+        db.execute(select(PublicationJob).where(PublicationJob.platform_variant_id.in_(variant_ids))).scalars().all()
+        if variant_ids
+        else []
+    )
+    job_ids = [job.id for job in jobs]
+    posts = (
+        db.execute(select(PlatformPost).where(PlatformPost.publication_job_id.in_(job_ids))).scalars().all()
+        if job_ids
+        else []
+    )
+    post_ids = [post.id for post in posts]
+    concept_id = package.concept_id
+    stats = storage.delete_content_package(package_id)
+
+    if post_ids:
+        db.query(PostMetricSnapshot).filter(PostMetricSnapshot.platform_post_id.in_(post_ids)).delete(
+            synchronize_session=False
+        )
+    if job_ids:
+        db.query(PlatformPost).filter(PlatformPost.publication_job_id.in_(job_ids)).delete(
+            synchronize_session=False
+        )
+    if variant_ids:
+        db.query(PublicationJob).filter(PublicationJob.platform_variant_id.in_(variant_ids)).delete(
+            synchronize_session=False
+        )
+    db.query(GeneratedAsset).filter(GeneratedAsset.content_package_id == package_id).delete(
+        synchronize_session=False
+    )
+    db.query(ApprovalRecord).filter(ApprovalRecord.content_package_id == package_id).delete(
+        synchronize_session=False
+    )
+    db.query(ExperimentAssignment).filter(ExperimentAssignment.content_package_id == package_id).delete(
+        synchronize_session=False
+    )
+    db.query(PolicyCheck).filter(PolicyCheck.content_package_id == package_id).delete(
+        synchronize_session=False
+    )
+    db.query(OriginalityCheck).filter(OriginalityCheck.content_package_id == package_id).delete(
+        synchronize_session=False
+    )
+    db.query(PlatformVariant).filter(PlatformVariant.content_package_id == package_id).delete(
+        synchronize_session=False
+    )
+    db.delete(package)
+    db.flush()
+    remaining = db.scalar(select(func.count(ContentPackage.id)).where(ContentPackage.concept_id == concept_id)) or 0
+    if not remaining:
+        concept = db.get(ContentConcept, concept_id)
+        if concept:
+            db.delete(concept)
+    record_audit(
+        db,
+        "content_package.permanently_deleted",
+        resource_type="content_package",
+        resource_id=package_id,
+        actor_id=user.id if user else None,
+        event_data={
+            **stats,
+            "remote_posts_deleted": False,
+            "warning": "Any post already published on a social platform remains online until removed through that platform.",
+        },
+    )
+    db.commit()
+    return {
+        "deleted": True,
+        "package_id": package_id,
+        **stats,
+        "remote_posts_deleted": False,
+    }
 
 
 @router.post("/content-packages/{package_id}/approve", dependencies=[Depends(csrf_protected)])
@@ -399,17 +683,32 @@ def publish_package(
         raise HTTPException(404, "Platform variant not found")
     if package.status not in {"ready_to_post", "approved", "scheduled"}:
         raise HTTPException(409, "Package has not passed review and approval")
-    key = f"publish:{variant.id}:{payload.schedule_at or 'now'}"
+    if payload.platform_account_id:
+        account = db.get(PlatformAccount, payload.platform_account_id)
+        if not account or account.deleted_at is not None:
+            raise HTTPException(404, "Selected platform account not found")
+        if account.platform != payload.platform:
+            raise HTTPException(409, "Selected account does not match the requested platform")
+        if user and account.user_id and account.user_id != user.id:
+            raise HTTPException(403, "Selected account belongs to another application user")
+        if account.authorization_status != "connected":
+            raise HTTPException(409, "Selected platform account is not connected")
+    else:
+        account = db.execute(
+            select(PlatformAccount).where(
+                PlatformAccount.platform == payload.platform,
+                PlatformAccount.authorization_status == "connected",
+                PlatformAccount.deleted_at.is_(None),
+                or_(
+                    PlatformAccount.user_id == (user.id if user else None),
+                    PlatformAccount.user_id.is_(None),
+                ),
+            )
+        ).scalars().first()
+    key = f"publish:{variant.id}:{account.id if account else 'none'}:{payload.schedule_at or 'now'}"
     existing = db.execute(select(PublicationJob).where(PublicationJob.idempotency_key == key)).scalar_one_or_none()
     if existing:
         return serialize_model(existing)
-    account = db.execute(
-        select(PlatformAccount).where(
-            PlatformAccount.platform == payload.platform,
-            PlatformAccount.authorization_status == "connected",
-            PlatformAccount.deleted_at.is_(None),
-        )
-    ).scalars().first()
     job = PublicationJob(
         platform_variant_id=variant.id,
         platform_account_id=account.id if account else None,
@@ -466,12 +765,40 @@ def get_file(
 
 
 @router.get("/accounts")
-def accounts(db: Session = Depends(get_db), _: User | None = Depends(current_user)) -> list[dict[str, Any]]:
-    records = {item.platform: serialize_model(item) for item in db.execute(select(PlatformAccount)).scalars()}
+def accounts(db: Session = Depends(get_db), user: User | None = Depends(current_user)) -> list[dict[str, Any]]:
+    records = db.execute(
+        select(PlatformAccount)
+        .where(
+            PlatformAccount.deleted_at.is_(None),
+            or_(
+                PlatformAccount.user_id == (user.id if user else None),
+                PlatformAccount.user_id.is_(None),
+            ),
+        )
+        .order_by(PlatformAccount.platform, PlatformAccount.created_at)
+    ).scalars().all()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    adopted = False
+    for item in records:
+        if user and item.user_id is None:
+            item.user_id = user.id
+            adopted = True
+        grouped.setdefault(item.platform, []).append(serialize_model(item))
+    if adopted:
+        db.commit()
     result = []
     for adapter in registry.all():
         health = adapter.health_check()
-        result.append({"platform": adapter.platform, "health": asdict(health), "account": records.get(adapter.platform)})
+        platform_accounts = grouped.get(adapter.platform, [])
+        result.append(
+            {
+                "platform": adapter.platform,
+                "health": asdict(health),
+                "accounts": platform_accounts,
+                "account": platform_accounts[0] if platform_accounts else None,
+                "multiple_accounts_supported": True,
+            }
+        )
     return result
 
 
@@ -485,73 +812,121 @@ def connect_account(platform: str, db: Session = Depends(get_db), user: User | N
 @router.get("/accounts/{platform}/callback")
 def oauth_callback(platform: str, code: str, state: str, db: Session = Depends(get_db)) -> RedirectResponse:
     payload = SessionSigner().verify(state)
-    if not str(payload["sub"]).startswith(f"oauth:{platform}:"):
+    subject = str(payload["sub"])
+    if not subject.startswith(f"oauth:{platform}:"):
         raise HTTPException(400, "Invalid OAuth state")
+    user_id = subject.split(":", 2)[2]
+    if user_id == "local":
+        user_id = ""
+    elif not db.get(User, user_id):
+        raise HTTPException(400, "OAuth state references an unknown application user")
+
     adapter = registry.get(platform)
     exchange = getattr(adapter, "exchange_code")(code)
     access_token = exchange.get("access_token")
     if not access_token:
         raise HTTPException(400, "OAuth provider did not return an access token")
     verification = adapter.verify_permissions(access_token)
-    account_info = verification.get("account") or (verification.get("accounts") or [{}])[0]
-    external_id = str(account_info.get("id") or account_info.get("open_id") or account_info.get("instagram_business_account", {}).get("id") or secrets.token_hex(8))
-    display = account_info.get("snippet", {}).get("title") or account_info.get("display_name") or account_info.get("name") or platform.title()
-    account = db.execute(select(PlatformAccount).where(PlatformAccount.platform == platform)).scalar_one_or_none()
-    if not account:
-        account = PlatformAccount(platform=platform)
-        db.add(account)
-    account.external_account_id = external_id
-    account.display_name = display
-    account.authorization_status = "connected"
-    account.token_health = "healthy"
-    account.granted_permissions = verification.get("required_scopes", [])
-    account.missing_permissions = []
-    account.publishing_eligible = bool(verification.get("valid"))
-    account.analytics_eligible = bool(verification.get("valid"))
-    account.raw_profile = account_info
-    account.account_type = account_info.get("account_type") or account_info.get("instagram_business_account", {}).get("account_type")
-    account.app_review_required = platform in {"tiktok", "instagram"}
-    account.last_api_call_at = datetime.now(UTC)
-    db.flush()
+    account_infos = verification.get("accounts") or [verification.get("account") or {}]
+    connected_ids: list[str] = []
     box = SecretBox()
-    credential = db.execute(select(OAuthCredential).where(OAuthCredential.platform_account_id == account.id)).scalar_one_or_none()
-    if not credential:
-        credential = OAuthCredential(platform_account_id=account.id)
-        db.add(credential)
-    credential.encrypted_access_token = box.encrypt(access_token)
-    if exchange.get("refresh_token"):
-        credential.encrypted_refresh_token = box.encrypt(exchange["refresh_token"])
-    credential.token_type = exchange.get("token_type")
-    credential.scopes = exchange.get("scope", "").split() if isinstance(exchange.get("scope"), str) else exchange.get("scope", [])
-    if exchange.get("expires_in"):
-        credential.expires_at = datetime.now(UTC) + timedelta(seconds=int(exchange["expires_in"]))
-    record_audit(db, "platform_account.connected", resource_type="platform_account", resource_id=account.id)
+    for account_info in account_infos:
+        external_id = str(
+            account_info.get("id")
+            or account_info.get("open_id")
+            or account_info.get("instagram_business_account", {}).get("id")
+            or secrets.token_hex(8)
+        )
+        display = (
+            account_info.get("snippet", {}).get("title")
+            or account_info.get("display_name")
+            or account_info.get("name")
+            or platform.title()
+        )
+        account = db.execute(
+            select(PlatformAccount).where(
+                PlatformAccount.platform == platform,
+                PlatformAccount.external_account_id == external_id,
+                PlatformAccount.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if not account:
+            account = PlatformAccount(platform=platform, external_account_id=external_id)
+            db.add(account)
+        account.user_id = user_id or None
+        account.display_name = display
+        account.authorization_status = "connected"
+        account.token_health = "healthy"
+        account.granted_permissions = verification.get("required_scopes", [])
+        account.missing_permissions = []
+        account.publishing_eligible = bool(verification.get("valid"))
+        account.analytics_eligible = bool(verification.get("valid"))
+        account.raw_profile = account_info
+        account.account_type = account_info.get("account_type") or account_info.get(
+            "instagram_business_account", {}
+        ).get("account_type")
+        account.app_review_required = platform in {"tiktok", "instagram"}
+        account.last_api_call_at = datetime.now(UTC)
+        db.flush()
+
+        credential = db.execute(
+            select(OAuthCredential).where(OAuthCredential.platform_account_id == account.id)
+        ).scalar_one_or_none()
+        if not credential:
+            credential = OAuthCredential(platform_account_id=account.id)
+            db.add(credential)
+        credential.encrypted_access_token = box.encrypt(access_token)
+        if exchange.get("refresh_token"):
+            credential.encrypted_refresh_token = box.encrypt(exchange["refresh_token"])
+        credential.token_type = exchange.get("token_type")
+        credential.scopes = (
+            exchange.get("scope", "").split()
+            if isinstance(exchange.get("scope"), str)
+            else exchange.get("scope", [])
+        )
+        if exchange.get("expires_in"):
+            credential.expires_at = datetime.now(UTC) + timedelta(seconds=int(exchange["expires_in"]))
+        connected_ids.append(account.id)
+        record_audit(
+            db,
+            "platform_account.connected",
+            resource_type="platform_account",
+            resource_id=account.id,
+            actor_id=user_id or None,
+        )
     db.commit()
-    return RedirectResponse(url=f"http://127.0.0.1:{settings.port}/portal/#accounts")
+    return RedirectResponse(url="/portal/#accounts")
 
 
-@router.post("/accounts/{platform}/test", dependencies=[Depends(csrf_protected)])
-def test_account(platform: str, db: Session = Depends(get_db), _: User | None = Depends(current_user)) -> dict[str, Any]:
-    account = db.execute(select(PlatformAccount).where(PlatformAccount.platform == platform)).scalar_one_or_none()
-    if not account:
-        raise HTTPException(404, "Account not connected")
-    credential = db.execute(select(OAuthCredential).where(OAuthCredential.platform_account_id == account.id)).scalar_one_or_none()
+def _platform_account_for_user(
+    db: Session, account_id: str, user: User | None
+) -> PlatformAccount:
+    account = db.get(PlatformAccount, account_id)
+    if not account or account.deleted_at is not None:
+        raise HTTPException(404, "Platform account not found")
+    if user and account.user_id and account.user_id != user.id:
+        raise HTTPException(403, "Platform account belongs to another application user")
+    return account
+
+
+def _test_platform_account(db: Session, account: PlatformAccount) -> dict[str, Any]:
+    credential = db.execute(
+        select(OAuthCredential).where(OAuthCredential.platform_account_id == account.id)
+    ).scalar_one_or_none()
     if not credential or not credential.encrypted_access_token:
         raise HTTPException(409, "Access token unavailable")
     token = SecretBox().decrypt(credential.encrypted_access_token)
-    result = registry.get(platform).verify_permissions(token)
+    result = registry.get(account.platform).verify_permissions(token)
     account.last_api_call_at = datetime.now(UTC)
     account.token_health = "healthy" if result.get("valid") else "degraded"
     db.commit()
     return redact(result)
 
 
-@router.post("/accounts/{platform}/disconnect", dependencies=[Depends(csrf_protected)])
-def disconnect_account(platform: str, db: Session = Depends(get_db), _: User | None = Depends(current_user)) -> dict[str, bool]:
-    account = db.execute(select(PlatformAccount).where(PlatformAccount.platform == platform)).scalar_one_or_none()
-    if not account:
-        return {"disconnected": True}
-    credential = db.execute(select(OAuthCredential).where(OAuthCredential.platform_account_id == account.id)).scalar_one_or_none()
+def _disconnect_platform_account(db: Session, account: PlatformAccount) -> dict[str, bool]:
+    credential = db.execute(
+        select(OAuthCredential).where(OAuthCredential.platform_account_id == account.id)
+    ).scalar_one_or_none()
     if credential:
         db.delete(credential)
     account.authorization_status = "disconnected"
@@ -559,6 +934,66 @@ def disconnect_account(platform: str, db: Session = Depends(get_db), _: User | N
     account.publishing_eligible = False
     db.commit()
     return {"disconnected": True}
+
+
+@router.post("/platform-accounts/{account_id}/test", dependencies=[Depends(csrf_protected)])
+def test_platform_account(
+    account_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    return _test_platform_account(db, _platform_account_for_user(db, account_id, user))
+
+
+@router.post("/platform-accounts/{account_id}/disconnect", dependencies=[Depends(csrf_protected)])
+def disconnect_platform_account(
+    account_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, bool]:
+    return _disconnect_platform_account(db, _platform_account_for_user(db, account_id, user))
+
+
+@router.post("/accounts/{platform}/test", dependencies=[Depends(csrf_protected)])
+def test_account(
+    platform: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    account = db.execute(
+        select(PlatformAccount).where(
+            PlatformAccount.platform == platform,
+            or_(
+                PlatformAccount.user_id == (user.id if user else None),
+                PlatformAccount.user_id.is_(None),
+            ),
+            PlatformAccount.deleted_at.is_(None),
+        )
+    ).scalars().first()
+    if not account:
+        raise HTTPException(404, "Account not connected")
+    return _test_platform_account(db, account)
+
+
+@router.post("/accounts/{platform}/disconnect", dependencies=[Depends(csrf_protected)])
+def disconnect_account(
+    platform: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, bool]:
+    account = db.execute(
+        select(PlatformAccount).where(
+            PlatformAccount.platform == platform,
+            or_(
+                PlatformAccount.user_id == (user.id if user else None),
+                PlatformAccount.user_id.is_(None),
+            ),
+            PlatformAccount.deleted_at.is_(None),
+        )
+    ).scalars().first()
+    if not account:
+        return {"disconnected": True}
+    return _disconnect_platform_account(db, account)
 
 
 @router.get("/schedules")

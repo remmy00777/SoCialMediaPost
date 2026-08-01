@@ -8,6 +8,7 @@ The SQLAlchemy model in `backend/app/models.py` is the source of truth. Main ent
 - `oauth_credentials`: encrypted access and refresh tokens
 - `trend_sources`: official, licensed, manual, or demonstration source and limitations
 - `source_videos`: normalized source observations and preserved raw response
+- `source_media_assets`: uploaded user-owned or licensed clips, media validation, hashes, rights declarations, and full-reuse permission
 - `source_metrics`: timestamped views, likes, comments, shares, saves, velocity inputs
 - `trend_candidates`, `trend_scores`, `trend_analyses`: ranking, confidence, and interpretation
 - `content_concepts`: selected and rejected scored concepts

@@ -140,6 +140,23 @@ class SourceVideo(Base, UUIDMixin, TimestampMixin):
     raw_response: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class SourceMediaAsset(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "source_media_assets"
+    source_video_id: Mapped[str] = mapped_column(ForeignKey("source_videos.id"), index=True)
+    uploaded_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    original_filename: Mapped[str] = mapped_column(String(255))
+    path: Mapped[str] = mapped_column(Text, unique=True)
+    mime_type: Mapped[str] = mapped_column(String(120))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    media_validation: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    rights_status: Mapped[str] = mapped_column(String(40), index=True)
+    rights_owner: Mapped[str] = mapped_column(String(255))
+    license_reference: Mapped[str | None] = mapped_column(Text)
+    allow_full_reuse: Mapped[bool] = mapped_column(Boolean, default=False)
+    rights_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class SourceMetric(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "source_metrics"
     source_video_id: Mapped[str] = mapped_column(ForeignKey("source_videos.id"), index=True)

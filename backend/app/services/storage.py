@@ -122,6 +122,42 @@ class StorageManager:
         shutil.copytree(package_dir, mirror)
         return mirror
 
+
+    def source_media_dir(self, candidate_id: str) -> Path:
+        directory = self.root / "trends" / "source_references" / secure_filename(candidate_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        return self.ensure_inside_root(directory)
+
+    def delete_source_media(self, candidate_id: str) -> dict[str, int]:
+        directory = self.source_media_dir(candidate_id)
+        return self._remove_tree(directory)
+
+    def delete_content_package(self, package_id: str) -> dict[str, int]:
+        safe_id = secure_filename(package_id)
+        totals = {"files_deleted": 0, "bytes_freed": 0, "directories_deleted": 0}
+        for display in PLATFORM_DISPLAY.values():
+            for status in ("drafts", "ready_to_post", "published", "failed", "quarantine", "archived"):
+                directory = self.ensure_inside_root(self.root / "generated" / display / status / safe_id)
+                self._add_delete_stats(totals, self._remove_tree(directory))
+            mirror = self.ensure_inside_root(self.root / f"Ready to Post for {display}" / safe_id)
+            self._add_delete_stats(totals, self._remove_tree(mirror))
+        return totals
+
+    @staticmethod
+    def _add_delete_stats(total: dict[str, int], current: dict[str, int]) -> None:
+        for key in total:
+            total[key] += current.get(key, 0)
+
+    def _remove_tree(self, directory: Path) -> dict[str, int]:
+        directory = self.ensure_inside_root(directory)
+        if not directory.exists():
+            return {"files_deleted": 0, "bytes_freed": 0, "directories_deleted": 0}
+        files = [path for path in directory.rglob("*") if path.is_file()]
+        size = sum(path.stat().st_size for path in files)
+        directories = sum(1 for path in directory.rglob("*") if path.is_dir()) + 1
+        shutil.rmtree(directory)
+        return {"files_deleted": len(files), "bytes_freed": size, "directories_deleted": directories}
+
     @staticmethod
     def sha256(path: Path) -> str:
         digest = hashlib.sha256()

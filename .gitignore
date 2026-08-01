@@ -20,11 +20,3 @@ storage/backups/*
 !storage/**/.gitkeep
 frontend/.env.local
 *.zip
-.env.local
-*.pem
-*.key
-
-.railway/
-storage/*.db
-storage/*.db-journal
-storage/celerybeat-schedule

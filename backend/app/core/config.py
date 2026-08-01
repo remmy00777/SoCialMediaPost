@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     celery_enabled: bool = False
     storage_root: Path = Path("./storage")
+    source_media_max_bytes: int = 524_288_000
+    source_media_max_duration_seconds: int = 180
     encryption_key: str | None = None
     keychain_service: str = "com.rcegai.socialmediapost"
 
@@ -115,9 +117,8 @@ class Settings(BaseSettings):
     @field_validator("host")
     @classmethod
     def localhost_only_by_default(cls, value: str) -> str:
-        allowed_hosts = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
-        if value not in allowed_hosts:
-            raise ValueError("HOST must be localhost or 0.0.0.0 for an authenticated production deployment.")
+        if value not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError("HOST must bind to localhost. Use a reverse proxy only after threat review.")
         return value
 
     @field_validator("session_secret")

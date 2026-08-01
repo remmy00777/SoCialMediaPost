@@ -141,12 +141,72 @@ class LocalTemplateProvider:
 
     def generate_package(self, concept: dict[str, Any], source: dict[str, Any], brand: BrandContext) -> dict[str, Any]:
         topic = source.get("topic") or self._topic_from_text(source.get("title") or source.get("caption") or "this topic")
+        source_media = source.get("source_media") or None
+        reusable_source = bool(
+            source_media
+            and source_media.get("allow_full_reuse")
+            and source_media.get("rights_status")
+            in {"user_owned", "licensed", "public_domain", "explicit_permission"}
+        )
+        hashtags = self._hashtags(topic, brand.niche)
+        seed = int(hashlib.sha256(topic.encode()).hexdigest()[:8], 16)
+
+        if reusable_source:
+            intro = (
+                f"Before you watch this authorized clip about {topic}, focus on the opening, pacing, "
+                "and the specific reason it holds attention."
+            )
+            caption = (
+                f"Authorized source clip with an original voiceover introduction about {topic}. "
+                "The source media is used only under the recorded ownership or license declaration."
+            )
+            return {
+                "title": f"What Makes This {topic.title()} Clip Work",
+                "hook": intro,
+                "script": f"{intro}\n\n[The complete authorized source clip plays after the introduction.]",
+                "voiceover_text": intro,
+                "voiceover_intro": intro,
+                "shot_list": [
+                    "Opening: Original title card with synthesized voiceover context",
+                    "After voiceover: Play the complete authorized source clip",
+                    "End: Preserve the source ending unless the license requires attribution",
+                ],
+                "editing_instructions": (
+                    "Prepend an original voiceover introduction, then play the full uploaded source clip. "
+                    "Use letterboxing or padding rather than destructive cropping. Do not download media from a platform URL."
+                ),
+                "on_screen_text": [
+                    f"Before you watch: notice what makes this {topic} clip effective",
+                    "Authorized source clip follows",
+                ],
+                "caption": caption,
+                "description": caption + "\n\nRights declaration and license reference are stored in the package compliance report.",
+                "hashtags": hashtags,
+                "keywords": [topic, brand.niche, "authorized clip", "voiceover introduction"],
+                "call_to_action": "What part of the clip held your attention most?",
+                "content_mode": "authorized_source_with_voiceover_intro",
+                "source_media": source_media,
+                "generation_metadata": {
+                    "provider": "local_template",
+                    "provider_version": self.version,
+                    "source_media_used": True,
+                    "source_rights_status": source_media.get("rights_status"),
+                    "paid_api_calls": 0,
+                    "seed": seed,
+                },
+                "predicted_performance_range": {
+                    "basis": "heuristic only, not a promise",
+                    "relative_to_account_baseline": "0.7x to 1.4x",
+                    "confidence": 0.35,
+                },
+            }
+
         hook = concept["primary_hook"]
         script = (
             f"{hook}\n\n"
-            f"First, define the actual decision. A popular video can show demand, but it does not automatically prove the conclusion.\n\n"
-            f"Second, separate evidence from interpretation. Check what is known, what is missing, and what assumptions are being made.\n\n"
-            f"Third, choose one useful action that fits your audience, your values, and the facts available now.\n\n"
+            "First, define the actual decision. A popular video can show demand, but it does not automatically prove the conclusion.\n\n"
+            "Second, separate evidence from interpretation. Check what is known, what is missing, and what assumptions are being made.\n\n"
+            "Third, choose one useful action that fits your audience, your values, and the facts available now.\n\n"
             f"That is how we turn a trend about {topic} into original value instead of a copy. "
             f"{concept['call_to_action']}"
         )
@@ -156,7 +216,6 @@ class LocalTemplateProvider:
             "without copying the source or overstating what the data proves. "
             f"{concept['call_to_action']}"
         )
-        hashtags = self._hashtags(topic, brand.niche)
         return {
             "title": base_title,
             "hook": hook,
@@ -176,12 +235,14 @@ class LocalTemplateProvider:
             "hashtags": hashtags,
             "keywords": [topic, brand.niche, "decision framework", "practical guide"],
             "call_to_action": concept["call_to_action"],
+            "content_mode": "original_generation",
+            "source_media": None,
             "generation_metadata": {
                 "provider": "local_template",
                 "provider_version": self.version,
                 "source_media_used": False,
                 "paid_api_calls": 0,
-                "seed": int(hashlib.sha256(topic.encode()).hexdigest()[:8], 16),
+                "seed": seed,
             },
             "predicted_performance_range": {
                 "basis": "heuristic only, not a promise",
@@ -191,6 +252,24 @@ class LocalTemplateProvider:
         }
 
     def adapt_platform(self, package: dict[str, Any], platform: str) -> dict[str, Any]:
+        if package.get("content_mode") == "authorized_source_with_voiceover_intro":
+            platform_names = {"tiktok": "TikTok", "instagram": "Instagram Reels", "youtube": "YouTube"}
+            post_settings: dict[str, Any]
+            if platform == "tiktok":
+                post_settings = {"privacy_level": "SELF_ONLY", "allow_comments": True, "allow_duet": False, "allow_stitch": False}
+            elif platform == "instagram":
+                post_settings = {"share_to_feed": True, "comments_enabled": True}
+            else:
+                post_settings = {"privacy_setting": "private", "made_for_kids": False}
+            return {
+                **package,
+                "platform": platform,
+                "title": f"{package['title']} | {platform_names[platform]}",
+                "caption": package["caption"] + f"\n\nPrepared for {platform_names[platform]}.",
+                "post_settings": post_settings,
+                "content_disclosure_recommendation": "Disclose synthetic voiceover and provide source attribution when required by the license.",
+                "recommended_publishing_window": "Use account analytics to test the best audience window.",
+            }
         base_script = package["script"]
         if platform == "tiktok":
             hook = "Stop copying trends. Ask these three questions first."
