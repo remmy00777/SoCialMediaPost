@@ -1,0 +1,43 @@
+{
+  "platform": "youtube",
+  "external_video_id": "demo-yt-001",
+  "canonical_url": "https://www.youtube.com/watch?v=demo-yt-001",
+  "creator_external_id": "demo-channel-1",
+  "creator_name": "Demo Learning Channel",
+  "creator_follower_count": 125000,
+  "title": "Three decisions that save time when evaluating a new AI tool",
+  "caption": "A practical way to evaluate an AI tool without chasing every new release.",
+  "hashtags": [
+    "#AITools",
+    "#Productivity"
+  ],
+  "topic": "evaluating AI tools",
+  "category": "27",
+  "language": "en",
+  "country": "US",
+  "published_at": "2026-07-30T12:00:00Z",
+  "duration_seconds": 38.0,
+  "audio_info": null,
+  "transcript": null,
+  "thumbnail_url": null,
+  "data_source": "demonstration_fixture",
+  "data_confidence": 1.0,
+  "metrics": {
+    "views": 480000,
+    "likes": 39000,
+    "comments": 2400,
+    "shares": null,
+    "saves": null,
+    "engagement_rate": 0.08625,
+    "view_velocity": 80000.0,
+    "engagement_velocity": 6900.0,
+    "status_codes": {
+      "shares": "unsupported_fixture",
+      "saves": "unsupported_fixture"
+    }
+  },
+  "raw_response": {
+    "fixture": true,
+    "simulated": true
+  }
+}

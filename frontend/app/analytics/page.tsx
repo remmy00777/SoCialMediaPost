@@ -1,0 +1,2 @@
+import { DataPage } from "@/components/DataPage";
+export default function Page() { return <DataPage title="Analytics" description="Compare account and post metrics without substituting estimates for unsupported official fields. Optimization uses a multi-objective performance score rather than raw views alone." endpoint="/api/analytics/overview" actions={[{ label: "Populate Demo Analytics", path: "/api/analytics/demo" }]} />; }

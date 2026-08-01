@@ -1,0 +1,116 @@
+{
+  "demonstration": true,
+  "trend_run": {
+    "workflow_type": "trend_discovery",
+    "status": "succeeded",
+    "started_at": "2026-07-30T17:40:21.533052Z",
+    "finished_at": "2026-07-30T17:40:21.561733Z",
+    "correlation_id": "trend_discovery-519dfdbb-2654-45d6-abaf-110fb9ef41df",
+    "summary": {
+      "candidates": 3,
+      "selected": 1,
+      "sources": [
+        "demonstration_fixture"
+      ],
+      "demo": true
+    },
+    "error_message": null,
+    "id": "f5e34af4-f1db-449f-93da-f94454832bf0",
+    "created_at": "2026-07-30T17:40:21.533067Z",
+    "updated_at": "2026-07-30T17:40:21.564369Z",
+    "deleted_at": null
+  },
+  "content_run": {
+    "workflow_type": "content_production",
+    "status": "succeeded",
+    "started_at": "2026-07-30T17:40:21.568463Z",
+    "finished_at": "2026-07-30T17:40:38.239609Z",
+    "correlation_id": "content_production-a79da078-cefa-498b-abee-193af8522984",
+    "summary": {
+      "generated_packages": 1,
+      "failed_items": 0,
+      "candidate_count": 1,
+      "auto_publications_queued": 0
+    },
+    "error_message": null,
+    "id": "75f07e77-476b-48cb-b612-ab0771aab265",
+    "created_at": "2026-07-30T17:40:21.568476Z",
+    "updated_at": "2026-07-30T17:40:38.240200Z",
+    "deleted_at": null
+  },
+  "package": {
+    "concept_id": "a102ca59-adde-4bdc-9945-72a6bbeaf17b",
+    "status": "ready_to_post",
+    "title": "A Better Way to Think About Software Buying Decisions",
+    "storage_path": "/mnt/data/SoCialMediaPost/storage/generated",
+    "quality_score": 90.64,
+    "predicted_performance": {
+      "basis": "heuristic only, not a promise",
+      "relative_to_account_baseline": "0.7x to 1.4x",
+      "confidence": 0.35
+    },
+    "generation_metadata": {
+      "provider": "local_template",
+      "provider_version": "local-template-v1",
+      "source_media_used": false,
+      "paid_api_calls": 0,
+      "seed": 19945773,
+      "workflow_run_id": "75f07e77-476b-48cb-b612-ab0771aab265"
+    },
+    "approval_mode": "manual_export",
+    "idempotency_key": "54a86ec7d948c31c54ef74d65966c521255d9a72e731310d9d6fd16ebda3b38a",
+    "id": "b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+    "created_at": "2026-07-30T17:40:21.588061",
+    "updated_at": "2026-07-30T17:40:38.234190",
+    "deleted_at": null
+  },
+  "simulated_publication": {
+    "platform_variant_id": "7f216354-50e8-4e11-88e2-6a8a912069be",
+    "platform_account_id": null,
+    "scheduled_at": null,
+    "status": "simulated",
+    "attempt_count": 0,
+    "idempotency_key": "publish:7f216354-50e8-4e11-88e2-6a8a912069be:now",
+    "external_upload_id": null,
+    "error_message": null,
+    "id": "bed0be4f-a7ca-4160-ba34-47fc58fa2830",
+    "created_at": "2026-07-30T17:40:38.248691Z",
+    "updated_at": "2026-07-30T17:40:38.250977Z",
+    "deleted_at": null
+  },
+  "sample_analytics": {
+    "platform_post_id": "95e4b093-5bc8-447c-9655-58fc5fd269c4",
+    "captured_at": "2026-07-30T17:40:38.264357Z",
+    "metrics": {
+      "views": 18400,
+      "likes": 1370,
+      "comments": 94,
+      "shares": 218,
+      "saves": 311,
+      "follows": 86,
+      "completion_rate": 0.64,
+      "retention": 0.71
+    },
+    "normalized_metrics": {
+      "views_per_1000_followers": 736.0,
+      "likes_per_1000_views": 74.4565,
+      "comments_per_1000_views": 5.1087,
+      "shares_per_1000_views": 11.8478,
+      "saves_per_1000_views": 16.9022,
+      "follows_per_1000_views": 4.6739,
+      "completion_rate_index": 0.64,
+      "retention_index": 0.71,
+      "engagement_velocity": null,
+      "follower_growth_velocity": null,
+      "click_through_per_1000_impressions": null,
+      "performance_score": 47.03
+    },
+    "unsupported": {
+      "unique_viewers": "simulation_not_available"
+    },
+    "id": "a3288852-c322-482d-8362-95ba69631436",
+    "created_at": "2026-07-30T17:40:38.264376Z",
+    "updated_at": "2026-07-30T17:40:38.264377Z",
+    "deleted_at": null
+  }
+}

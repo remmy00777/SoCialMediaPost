@@ -1,0 +1,58 @@
+{
+  "title": "The 3-Step Originality Framework",
+  "hook": "Save this before you build your next post from a trend.",
+  "script": "Save this before you build your next post from a trend.\n\nFirst, define the actual decision. A popular video can show demand, but it does not automatically prove the conclusion.\n\nSecond, separate evidence from interpretation. Check what is known, what is missing, and what assumptions are being made.\n\nThird, choose one useful action that fits your audience, your values, and the facts available now.\n\nThat is how we turn a trend about software buying decisions into original value instead of a copy. Which of the three questions matters most in your situation?\n\nSave this framework, then share it with someone planning their next Reel.",
+  "voiceover_text": "Save this before you build your next post from a trend. Before you decide what to do about software buying decisions, answer these three questions.\n\nFirst, define the actual decision. A popular video can show demand, but it does not automatically prove the conclusion.\n\nSecond, separate evidence from interpretation. Check what is known, what is missing, and what assumptions are being made.\n\nThird, choose one useful action that fits your audience, your values, and the facts available now.\n\nThat is how we turn a trend about software buying decisions into original value instead of a copy. Which of the three questions matters most in your situation? Save this framework, then share it with someone planning their next Reel.",
+  "shot_list": [
+    "0-3s: Bold hook over an original moving gradient",
+    "3-10s: Question one with animated number and concise text",
+    "10-18s: Question two with evidence versus interpretation split",
+    "18-26s: Question three with action checklist",
+    "26-30s: Closing question and subtle loop back to the hook"
+  ],
+  "editing_instructions": "Use original geometric backgrounds, two-to-four-second scene changes, safe-area text, and no source footage.",
+  "on_screen_text": [
+    "Save this before you build your next post from a trend.",
+    "Define the decision",
+    "Check facts versus interpretation",
+    "Create one original takeaway",
+    "Save this framework"
+  ],
+  "caption": "A trending idea is only a starting signal. This three-part framework helps you evaluate software buying decisions without copying the source or overstating what the data proves. Which of the three questions matters most in your situation?\n\nSave this framework for the next trend you evaluate.",
+  "description": "A trending idea is only a starting signal. This three-part framework helps you evaluate software buying decisions without copying the source or overstating what the data proves. Which of the three questions matters most in your situation?\n\nCreated from high-level trend patterns using original script and visuals.",
+  "hashtags": [
+    "#SoftwareBuyingDecisions",
+    "#GeneralEducation",
+    "#PracticalFramework",
+    "#OriginalContent",
+    "#LearnOnSocial"
+  ],
+  "keywords": [
+    "software buying decisions",
+    "General education",
+    "decision framework",
+    "practical guide"
+  ],
+  "call_to_action": "Save this framework, then share it with someone planning their next Reel.",
+  "generation_metadata": {
+    "provider": "local_template",
+    "provider_version": "local-template-v1",
+    "source_media_used": false,
+    "paid_api_calls": 0,
+    "seed": 19945773
+  },
+  "predicted_performance_range": {
+    "basis": "heuristic only, not a promise",
+    "relative_to_account_baseline": "0.7x to 1.4x",
+    "confidence": 0.35
+  },
+  "platform": "instagram",
+  "alt_text_recommendation": "Animated three-part framework explaining how to evaluate a trending idea.",
+  "post_settings": {
+    "share_to_feed": true,
+    "comments_enabled": true
+  },
+  "recommended_publishing_window": "Test 11:00 AM to 1:00 PM or 6:00 PM to 8:00 PM.",
+  "package_id": "b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+  "content_quality_score": 90.64
+}

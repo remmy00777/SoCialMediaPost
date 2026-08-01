@@ -1,0 +1,119 @@
+name: socialmediapost
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: socialmediapost
+      POSTGRES_USER: socialmediapost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-local-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U socialmediapost -d socialmediapost"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 127.0.0.1
+      DATABASE_URL: postgresql+psycopg://socialmediapost:${POSTGRES_PASSWORD:-change-this-local-password}@postgres:5432/socialmediapost
+      REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
+      STORAGE_ROOT: /data/storage
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8765 --proxy-headers"]
+    ports:
+      - "127.0.0.1:${PORT:-8765}:8765"
+    volumes:
+      - ./storage:/data/storage
+      - ./fixtures:/app/fixtures:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8765/api/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://socialmediapost:${POSTGRES_PASSWORD:-change-this-local-password}@postgres:5432/socialmediapost
+      REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
+      STORAGE_ROOT: /data/storage
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=2", "--max-tasks-per-child=100"]
+    volumes:
+      - ./storage:/data/storage
+      - ./fixtures:/app/fixtures:ro
+    depends_on:
+      api: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [internal]
+
+  beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://socialmediapost:${POSTGRES_PASSWORD:-change-this-local-password}@postgres:5432/socialmediapost
+      REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
+      STORAGE_ROOT: /data/storage
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/data/storage/celerybeat-schedule"]
+    volumes:
+      - ./storage:/data/storage
+      - ./fixtures:/app/fixtures:ro
+    depends_on:
+      api: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [internal]
+
+  frontend:
+    profiles: ["nextjs"]
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:${PORT:-8765}/api
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [internal]
+
+networks:
+  internal:
+    internal: false
+volumes:
+  postgres_data:
+  redis_data:

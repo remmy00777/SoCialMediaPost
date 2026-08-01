@@ -1,0 +1,164 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "SoCialMediaPost Studio",
+      "version": "0.1.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "fastapi",
+      "version_constraint": "==0.140.3"
+    },
+    {
+      "type": "library",
+      "name": "uvicorn",
+      "version_constraint": "[standard]>=0.35,<1"
+    },
+    {
+      "type": "library",
+      "name": "pydantic",
+      "version_constraint": ">=2.11,<3"
+    },
+    {
+      "type": "library",
+      "name": "pydantic-settings",
+      "version_constraint": ">=2.10,<3"
+    },
+    {
+      "type": "library",
+      "name": "sqlalchemy",
+      "version_constraint": ">=2.0.41,<3"
+    },
+    {
+      "type": "library",
+      "name": "alembic",
+      "version_constraint": ">=1.16,<2"
+    },
+    {
+      "type": "library",
+      "name": "psycopg",
+      "version_constraint": "[binary]>=3.2,<4"
+    },
+    {
+      "type": "library",
+      "name": "httpx",
+      "version_constraint": ">=0.28,<1"
+    },
+    {
+      "type": "library",
+      "name": "cryptography",
+      "version_constraint": ">=45,<47"
+    },
+    {
+      "type": "library",
+      "name": "python-multipart",
+      "version_constraint": ">=0.0.20,<1"
+    },
+    {
+      "type": "library",
+      "name": "celery",
+      "version_constraint": ">=5.5,<6"
+    },
+    {
+      "type": "library",
+      "name": "redis",
+      "version_constraint": ">=6,<7"
+    },
+    {
+      "type": "library",
+      "name": "apscheduler",
+      "version_constraint": ">=3.11,<4"
+    },
+    {
+      "type": "library",
+      "name": "email-validator",
+      "version_constraint": ">=2.2,<3"
+    },
+    {
+      "type": "library",
+      "name": "orjson",
+      "version_constraint": ">=3.10,<4"
+    },
+    {
+      "type": "library",
+      "name": "itsdangerous",
+      "version_constraint": ">=2.2,<3"
+    },
+    {
+      "type": "library",
+      "name": "jinja2",
+      "version_constraint": ">=3.1,<4"
+    },
+    {
+      "type": "library",
+      "name": "reportlab",
+      "version_constraint": ">=4.4,<5"
+    },
+    {
+      "type": "library",
+      "name": "next",
+      "version_constraint": "16.2.0",
+      "scope": "dependencies"
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version_constraint": "19.2.0",
+      "scope": "dependencies"
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version_constraint": "19.2.0",
+      "scope": "dependencies"
+    },
+    {
+      "type": "library",
+      "name": "@types/node",
+      "version_constraint": "^24.0.0",
+      "scope": "devDependencies"
+    },
+    {
+      "type": "library",
+      "name": "@types/react",
+      "version_constraint": "^19.1.8",
+      "scope": "devDependencies"
+    },
+    {
+      "type": "library",
+      "name": "@types/react-dom",
+      "version_constraint": "^19.1.6",
+      "scope": "devDependencies"
+    },
+    {
+      "type": "library",
+      "name": "eslint",
+      "version_constraint": "^9.30.0",
+      "scope": "devDependencies"
+    },
+    {
+      "type": "library",
+      "name": "eslint-config-next",
+      "version_constraint": "16.2.0",
+      "scope": "devDependencies"
+    },
+    {
+      "type": "library",
+      "name": "typescript",
+      "version_constraint": "^5.9.2",
+      "scope": "devDependencies"
+    },
+    {
+      "type": "library",
+      "name": "@playwright/test",
+      "version_constraint": "^1.54.0",
+      "scope": "optionalDependencies"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "package_id": "b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+  "platform": "tiktok",
+  "provider": "local_ffmpeg",
+  "render_mode": "original_kinetic_typography",
+  "source_video_downloaded": false,
+  "rights": {
+    "music": "original_or_none",
+    "footage": "original",
+    "images": "original",
+    "voice": "synthetic_local_or_user_authorized",
+    "fonts": "system_or_open_license"
+  },
+  "generation_metadata": {
+    "provider": "local_template",
+    "provider_version": "local-template-v1",
+    "source_media_used": false,
+    "paid_api_calls": 0,
+    "seed": 19945773
+  }
+}

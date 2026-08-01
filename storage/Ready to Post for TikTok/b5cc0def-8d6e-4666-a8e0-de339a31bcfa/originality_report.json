@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "component_scores": {
+    "script_similarity": 0.0937,
+    "caption_similarity": 0.1118,
+    "title_similarity": 0.2673,
+    "hashtag_overlap": 0.0,
+    "distinctive_phrase_overlap": 0.0
+  },
+  "thresholds": {
+    "script_similarity": 0.42,
+    "caption_similarity": 0.5,
+    "title_similarity": 0.55,
+    "hashtag_overlap": 0.65,
+    "distinctive_phrase_overlap": 0.25
+  },
+  "blocking_reasons": [],
+  "principle": "The system learns structural patterns but does not reproduce protected expression."
+}

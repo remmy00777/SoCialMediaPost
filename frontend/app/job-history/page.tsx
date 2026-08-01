@@ -1,0 +1,2 @@
+import { DataPage } from "@/components/DataPage";
+export default function Page() { return <DataPage title="Job History" description="Inspect persistent workflow runs, per-item isolation, correlation IDs, success summaries, failures, and recovery outcomes." endpoint="/api/workflows" actions={[{ label: "Run Trend Workflow", path: "/api/workflows/trends?max_candidates=30&select_limit=10" }, { label: "Run Content Workflow", path: "/api/workflows/content?max_items=10" }]} />; }

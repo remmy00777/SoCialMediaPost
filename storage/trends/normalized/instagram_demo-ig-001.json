@@ -1,0 +1,40 @@
+{
+  "platform": "instagram",
+  "external_video_id": "demo-ig-001",
+  "canonical_url": "https://www.instagram.com/reel/demo-ig-001/",
+  "creator_external_id": "demo-creator-3",
+  "creator_name": "Demo Business",
+  "creator_follower_count": 98000,
+  "title": "A simple framework for deciding what deserves your attention",
+  "caption": "Save this three-part framework for the next time everything feels urgent.",
+  "hashtags": [
+    "#Focus",
+    "#Framework"
+  ],
+  "topic": "attention management",
+  "category": null,
+  "language": "en",
+  "country": "US",
+  "published_at": "2026-07-29T21:00:00Z",
+  "duration_seconds": 31.0,
+  "audio_info": null,
+  "transcript": null,
+  "thumbnail_url": null,
+  "data_source": "demonstration_fixture",
+  "data_confidence": 1.0,
+  "metrics": {
+    "views": 195000,
+    "likes": 22600,
+    "comments": 980,
+    "shares": 5300,
+    "saves": 9100,
+    "engagement_rate": 0.195,
+    "view_velocity": 15000.0,
+    "engagement_velocity": 2920.0,
+    "status_codes": {}
+  },
+  "raw_response": {
+    "fixture": true,
+    "simulated": true
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "generated_at": "2026-07-30T17:44:16.960816+00:00",
+  "architecture": "FastAPI modular monolith, SQLAlchemy/PostgreSQL, Redis/Celery, FFmpeg, localhost portal, Docker Compose, launchd",
+  "tests": {
+    "unit": {
+      "passed": 30,
+      "failed": 0,
+      "duration_seconds": 10.83,
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. pytest -q -o addopts='' tests/unit --disable-warnings --maxfail=1"
+    },
+    "integration": {
+      "passed": 6,
+      "failed": 0,
+      "duration_seconds": 24.89,
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. pytest -q -o addopts='' tests/integration --disable-warnings --maxfail=1"
+    },
+    "total_passed": 36,
+    "coverage": {
+      "percent": 73.5262206148282,
+      "display": "74",
+      "covered_lines": 2033,
+      "statements": 2765,
+      "note": "Measured on the earlier 34-test instrumented run. A later coverage-instrumented integration rerun exceeded the execution timeout, so this value was not overstated."
+    }
+  },
+  "migration": {
+    "status": "passed",
+    "table_count": 37,
+    "required_missing": []
+  },
+  "runtime_smoke": {
+    "liveness": "alive",
+    "readiness": "ready",
+    "portal_http": 200,
+    "root_http": 307,
+    "portal_url": "http://127.0.0.1:8765/portal/"
+  },
+  "demo": {
+    "status": "succeeded",
+    "package_id": "b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+    "quality_score": 90.64,
+    "generated_packages": 1,
+    "failed_items": 0,
+    "simulated_publication_status": "simulated",
+    "sample_views": 18400
+  },
+  "platform_media": {
+    "tiktok": {
+      "directory": "/mnt/data/SoCialMediaPost/storage/Ready to Post for TikTok/b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+      "required_files_present": true,
+      "required_file_count": 17,
+      "sha256": "da7ee55a7e4d7a1fafaf566fdb9acdddb45a80ba175e276751b2dc4b8c0444e5",
+      "size_bytes": 754937,
+      "duration_seconds": 12.0,
+      "width": 1080,
+      "height": 1920,
+      "frame_rate": "24/1",
+      "video_codec": "h264",
+      "audio_codec": "aac"
+    },
+    "instagram": {
+      "directory": "/mnt/data/SoCialMediaPost/storage/Ready to Post for Instagram/b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+      "required_files_present": true,
+      "required_file_count": 17,
+      "sha256": "d766977630215f2f670acea5f93a432ab69fddc7f691ef8d7f07784e50900c3e",
+      "size_bytes": 714139,
+      "duration_seconds": 12.0,
+      "width": 1080,
+      "height": 1920,
+      "frame_rate": "24/1",
+      "video_codec": "h264",
+      "audio_codec": "aac"
+    },
+    "youtube": {
+      "directory": "/mnt/data/SoCialMediaPost/storage/Ready to Post for YouTube/b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+      "required_files_present": true,
+      "required_file_count": 17,
+      "sha256": "befe74682ed74b3d9a4fa4cf7794eb15b4f83740867c4e97ad47e7432aac6ce5",
+      "size_bytes": 829182,
+      "duration_seconds": 12.0,
+      "width": 1080,
+      "height": 1920,
+      "frame_rate": "24/1",
+      "video_codec": "h264",
+      "audio_codec": "aac"
+    }
+  },
+  "platform_videos_distinct": true,
+  "security": {
+    "high_confidence_secret_scan": "passed",
+    "python_compileall": "passed",
+    "shell_syntax": "passed",
+    "plist_parse": "passed",
+    "compose_yaml_parse": "passed",
+    "sbom": "generated",
+    "container_dependency_audit": "not_run_docker_unavailable"
+  },
+  "not_run": [
+    "Docker image build and Docker Compose startup, Docker is unavailable in this execution environment.",
+    "Next.js build, typecheck, and Playwright E2E, the internal npm mirror did not provide required packages.",
+    "Live OAuth authorization, app review, private test uploads, public publishing, and live analytics, no platform credentials or approvals were supplied.",
+    "Updated all-source coverage after the final changes, coverage-instrumented integration execution exceeded the environment timeout."
+  ],
+  "connected_platform_status": {
+    "youtube": "needs_configuration",
+    "tiktok": "needs_configuration",
+    "instagram": "needs_configuration"
+  }
+}

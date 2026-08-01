@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "checks": {
+    "moderation": "passed",
+    "rights": "passed",
+    "misinformation": "manual_review_required_for_factual_claims",
+    "disclosure": "recommend disclosure when synthetic media materially depicts reality",
+    "brand_safety": "passed",
+    "technical": "pending_media_validation"
+  },
+  "rights": {
+    "music": "original_or_none",
+    "footage": "original",
+    "images": "original",
+    "voice": "synthetic_local_or_user_authorized",
+    "fonts": "system_or_open_license"
+  },
+  "blocking_reasons": [],
+  "ruleset_version": "local-policy-v1"
+}

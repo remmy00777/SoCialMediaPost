@@ -1,0 +1,60 @@
+{
+  "title": "3 Questions Before You Follow a Trend",
+  "hook": "Stop copying trends. Ask these three questions first.",
+  "script": "Stop copying trends. Ask these three questions first.\n\nFirst, define the actual decision. A popular video can show demand, but it does not automatically prove the conclusion.\n\nSecond, separate evidence from interpretation. Check what is known, what is missing, and what assumptions are being made.\n\nThird, choose one useful action that fits your audience, your values, and the facts available now.\n\nThat is how we turn a trend about software buying decisions into original value instead of a copy. Which of the three questions matters most in your situation?\n\nWhich question would you answer first, one, two, or three?",
+  "voiceover_text": "Stop copying trends. Ask these three questions first. Before you decide what to do about software buying decisions, answer these three questions.\n\nFirst, define the actual decision. A popular video can show demand, but it does not automatically prove the conclusion.\n\nSecond, separate evidence from interpretation. Check what is known, what is missing, and what assumptions are being made.\n\nThird, choose one useful action that fits your audience, your values, and the facts available now.\n\nThat is how we turn a trend about software buying decisions into original value instead of a copy. Which of the three questions matters most in your situation? Which question would you answer first, one, two, or three?",
+  "shot_list": [
+    "0-3s: Bold hook over an original moving gradient",
+    "3-10s: Question one with animated number and concise text",
+    "10-18s: Question two with evidence versus interpretation split",
+    "18-26s: Question three with action checklist",
+    "26-30s: Closing question and subtle loop back to the hook"
+  ],
+  "editing_instructions": "Use original geometric backgrounds, two-to-four-second scene changes, safe-area text, and no source footage.",
+  "on_screen_text": [
+    "Stop copying trends. Ask these three questions first.",
+    "1. Define the real decision",
+    "2. Separate facts from assumptions",
+    "3. Choose one useful action",
+    "Comment 1, 2, or 3"
+  ],
+  "caption": "A trending idea is only a starting signal. This three-part framework helps you evaluate software buying decisions without copying the source or overstating what the data proves. Which of the three questions matters most in your situation? Comment 1, 2, or 3 with your answer.",
+  "description": "A trending idea is only a starting signal. This three-part framework helps you evaluate software buying decisions without copying the source or overstating what the data proves. Which of the three questions matters most in your situation?\n\nCreated from high-level trend patterns using original script and visuals.",
+  "hashtags": [
+    "#SoftwareBuyingDecisions",
+    "#GeneralEducation",
+    "#PracticalFramework",
+    "#OriginalContent",
+    "#LearnOnSocial"
+  ],
+  "keywords": [
+    "software buying decisions",
+    "General education",
+    "decision framework",
+    "practical guide"
+  ],
+  "call_to_action": "Which question would you answer first, one, two, or three?",
+  "generation_metadata": {
+    "provider": "local_template",
+    "provider_version": "local-template-v1",
+    "source_media_used": false,
+    "paid_api_calls": 0,
+    "seed": 19945773
+  },
+  "predicted_performance_range": {
+    "basis": "heuristic only, not a promise",
+    "relative_to_account_baseline": "0.7x to 1.4x",
+    "confidence": 0.35
+  },
+  "platform": "tiktok",
+  "post_settings": {
+    "privacy_level": "SELF_ONLY",
+    "allow_comments": true,
+    "allow_duet": false,
+    "allow_stitch": false
+  },
+  "content_disclosure_recommendation": "Enable synthetic-media disclosure when required by the final assets.",
+  "recommended_publishing_window": "Test 6:00 PM to 9:00 PM in the audience timezone.",
+  "package_id": "b5cc0def-8d6e-4666-a8e0-de339a31bcfa",
+  "content_quality_score": 90.64
+}

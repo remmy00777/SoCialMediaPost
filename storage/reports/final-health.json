@@ -1,0 +1,53 @@
+{
+  "status": "ready",
+  "checks": {
+    "database": "ready",
+    "ffmpeg": "ready",
+    "storage": "ready",
+    "platforms": [
+      {
+        "platform": "youtube",
+        "status": "needs_configuration",
+        "configured": false,
+        "publishing_eligible": false,
+        "analytics_eligible": false,
+        "limitations": [
+          "The mostPopular chart is not the historical YouTube Trending page.",
+          "OAuth consent and channel authorization are required for uploads and owned analytics.",
+          "Shorts view counts use the post-March-2025 counting definition."
+        ],
+        "details": {}
+      },
+      {
+        "platform": "tiktok",
+        "status": "needs_configuration",
+        "configured": false,
+        "publishing_eligible": false,
+        "analytics_eligible": false,
+        "limitations": [
+          "No unauthorized scraping or platform-wide discovery is performed.",
+          "Research API access is limited to approved non-commercial research use.",
+          "Unaudited Direct Post clients are restricted to private visibility.",
+          "Direct posting requires video.publish approval and explicit creator consent."
+        ],
+        "details": {
+          "research_access_configured": false
+        }
+      },
+      {
+        "platform": "instagram",
+        "status": "needs_configuration",
+        "configured": false,
+        "publishing_eligible": false,
+        "analytics_eligible": false,
+        "limitations": [
+          "Official publishing and insights require an eligible Instagram professional account.",
+          "Owned-account insights are not platform-wide trend discovery.",
+          "Arbitrary public Reel analytics are not available through the owned-media API.",
+          "App review and granted permissions may be required before non-role users can connect."
+        ],
+        "details": {}
+      }
+    ]
+  }
+}

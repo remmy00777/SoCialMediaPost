@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>SoCialMediaPost Studio</title>
+  <link rel="stylesheet" href="/portal/styles.css" />
+</head>
+<body>
+  <div id="auth-screen" class="auth-shell">
+    <section class="auth-card">
+      <div class="eyebrow">LOCAL-FIRST CONTENT OPERATIONS</div>
+      <h1>SoCialMediaPost Studio</h1>
+      <p>Sign in to your private local portal, or initialize the application on first use.</p>
+      <form id="login-form">
+        <label>Email<input id="email" type="email" value="admin@localhost" autocomplete="username" required /></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit">Sign in</button>
+      </form>
+      <button id="bootstrap" class="secondary">Initialize first-use account</button>
+      <p id="auth-message" class="message" role="status"></p>
+    </section>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">S</span><div><strong>SoCialMediaPost</strong><small>Local Studio</small></div></div>
+      <nav id="nav" aria-label="Portal sections"></nav>
+      <div class="sidebar-footer">
+        <button id="pause-toggle" class="danger">Pause All Automation</button>
+        <button id="logout" class="secondary">Sign out</button>
+      </div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div><div class="eyebrow" id="section-kicker">OPERATIONS</div><h1 id="section-title">Dashboard</h1></div>
+        <div class="top-actions"><span id="status-pill" class="status">Checking</span><button id="refresh" class="secondary">Refresh</button></div>
+      </header>
+      <section id="notice" class="notice hidden" role="status"></section>
+      <section id="content" class="content" aria-live="polite"></section>
+    </main>
+  </div>
+  <script src="/portal/app.js" defer></script>
+</body>
+</html>

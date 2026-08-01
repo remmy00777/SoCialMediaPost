@@ -1,0 +1,63 @@
+[project]
+name = "social-media-post-studio"
+version = "0.1.0"
+description = "Local-first social-media intelligence, generation, publishing, analytics, and optimization platform"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "fastapi==0.140.3",
+  "uvicorn[standard]>=0.35,<1",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "sqlalchemy>=2.0.41,<3",
+  "alembic>=1.16,<2",
+  "psycopg[binary]>=3.2,<4",
+  "httpx>=0.28,<1",
+  "cryptography>=45,<47",
+  "python-multipart>=0.0.20,<1",
+  "celery>=5.5,<6",
+  "redis>=6,<7",
+  "apscheduler>=3.11,<4",
+  "email-validator>=2.2,<3",
+  "orjson>=3.10,<4",
+  "itsdangerous>=2.2,<3",
+  "jinja2>=3.1,<4",
+  "reportlab>=4.4,<5"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9,<10",
+  "pytest-cov>=6,<7",
+  "pytest-asyncio>=1,<2",
+  "ruff>=0.12,<1",
+  "mypy>=1.17,<2",
+  "types-requests>=2.32,<3",
+  "bandit>=1.8,<2"
+]
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings --maxfail=1 --cov=app --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "B008"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+ignore_missing_imports = true
+exclude = ["alembic"]

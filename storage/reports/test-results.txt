@@ -1,0 +1,4 @@
+Unit tests: 30 passed in 10.83s
+Integration tests: 6 passed in 24.89s
+Total: 36 passed
+Measured statement coverage: 73.53% (2033/2765) on the prior instrumented run.

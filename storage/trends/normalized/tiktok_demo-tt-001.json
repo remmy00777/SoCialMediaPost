@@ -1,0 +1,42 @@
+{
+  "platform": "tiktok",
+  "external_video_id": "demo-tt-001",
+  "canonical_url": "https://www.tiktok.com/@demo/video/demo-tt-001",
+  "creator_external_id": "demo-creator-2",
+  "creator_name": "Demo Creator",
+  "creator_follower_count": 45000,
+  "title": "The question most people skip before buying software",
+  "caption": "Before you pay for another tool, answer this.",
+  "hashtags": [
+    "#Software",
+    "#DecisionMaking"
+  ],
+  "topic": "software buying decisions",
+  "category": null,
+  "language": "en",
+  "country": "US",
+  "published_at": "2026-07-30T10:00:00Z",
+  "duration_seconds": 25.0,
+  "audio_info": null,
+  "transcript": null,
+  "thumbnail_url": null,
+  "data_source": "demonstration_fixture",
+  "data_confidence": 1.0,
+  "metrics": {
+    "views": 280000,
+    "likes": 31000,
+    "comments": 1700,
+    "shares": 8200,
+    "saves": null,
+    "engagement_rate": 0.146,
+    "view_velocity": 70000.0,
+    "engagement_velocity": 10225.0,
+    "status_codes": {
+      "saves": "unsupported_fixture"
+    }
+  },
+  "raw_response": {
+    "fixture": true,
+    "simulated": true
+  }
+}
