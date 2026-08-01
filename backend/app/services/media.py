@@ -94,7 +94,7 @@ class MediaRenderer:
         }
 
     def _render_video(self, output: Path, subtitles: Path, duration: int) -> None:
-        escaped = str(subtitles).replace("\", "/").replace(":", "\:").replace("'", "\'")
+        escaped = str(subtitles).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
         filter_chain = (
             "subtitles='" + escaped + "':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00101828,BorderStyle=3,Outline=1,Shadow=0,MarginV=180,Alignment=2'"
