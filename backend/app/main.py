@@ -17,6 +17,7 @@ from app.api.router import router, seed_defaults
 from app.core.config import get_settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.logging import configure_logging
+from app.core.security import hash_password
 from app.models import BrandProfile, User
 from app.services.storage import StorageManager
 
@@ -30,6 +31,24 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     StorageManager(settings).initialize()
     with SessionLocal() as db:
+        existing_user = db.execute(select(User)).scalars().first()
+
+        if not existing_user:
+            administrator = User(
+                email=settings.admin_email,
+                password_hash=hash_password(settings.admin_password),
+                is_admin=True,
+            )
+            db.add(administrator)
+            db.flush()
+
+            db.add(
+                BrandProfile(
+                    user_id=administrator.id,
+                    approved=settings.demo_mode,
+                )
+            )
+
         seed_defaults(db)
         db.commit()
     yield
