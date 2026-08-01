@@ -25,6 +25,9 @@ This avoids unnecessary microservices while isolating platform adapters, AI prov
 - Instagram professional-account OAuth, owned-media, insights, and publishing adapter paths with account-type gates
 - Demo mode with synthetic fixtures, three platform adaptations, valid H.264/AAC videos, captions, thumbnails, reports, and sample analytics
 - Manual Export, Review and Approve, and gated Controlled Automatic Publishing data models and controls
+- Permanent content-package deletion with storage-recovery reporting and an irreversible confirmation gate
+- Multiple connected social-media accounts per application user, with account-specific testing, disconnection, and publishing selection
+- Rights-managed source-clip remix mode that prepends an original synthesized voiceover before the complete user-owned or licensed clip
 - Originality, policy, rights, quality, media-validation, budget, idempotency, and global-pause gates
 - OAuth token encryption through macOS Keychain where available, with a permission-restricted local fallback
 - CSV and PDF reports, audit events, notifications, experiments, backups, health checks, and a complete storage tree

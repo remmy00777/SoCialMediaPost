@@ -28,3 +28,10 @@ Verified on July 30, 2026. Platform behavior can change, so recheck official doc
 ## Application behavior
 
 Unsupported fields are stored as null with a reason code. The system does not estimate official metrics unless the output is explicitly labeled as an estimate. No unauthorized scraper or authentication bypass is implemented.
+
+## Rights-managed source clips
+
+- The application does not download or copy a third party's viral video from a platform URL.
+- Full source-clip playback is available only for a file uploaded by the user with recorded ownership, license, public-domain status, or explicit permission.
+- A user declaration is an operational safeguard, not independent legal verification. The user remains responsible for confirming that the license covers editing, voiceover, publication, territories, platforms, and commercial use.
+- The local `espeak-ng` voice is a functional fallback. Configure an approved higher-quality TTS provider for polished production narration.

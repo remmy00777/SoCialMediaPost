@@ -36,3 +36,19 @@ def test_storage_copy_move_mirror_and_usage(tmp_path: Path):
     mirror = manager.mirror_ready_package('tiktok', ready, 'pkg')
     assert (mirror / 'final_video.mp4').exists()
     assert manager.storage_usage()['file_count'] >= 3
+
+
+def test_permanent_package_delete_removes_variants_and_mirrors(tmp_path: Path):
+    settings = Settings(storage_root=tmp_path, session_secret="x" * 32)
+    manager = StorageManager(settings)
+    for platform in ("tiktok", "instagram", "youtube"):
+        package = manager.package_dir(platform, "ready_to_post", "pkg-delete")
+        package.mkdir(parents=True)
+        (package / "final_video.mp4").write_bytes(b"12345")
+        manager.mirror_ready_package(platform, package, "pkg-delete")
+    stats = manager.delete_content_package("pkg-delete")
+    assert stats["files_deleted"] == 6
+    assert stats["bytes_freed"] == 30
+    for platform in ("tiktok", "instagram", "youtube"):
+        assert not manager.package_dir(platform, "ready_to_post", "pkg-delete").exists()
+        assert not manager.ready_mirror_dir(platform, "pkg-delete").exists()

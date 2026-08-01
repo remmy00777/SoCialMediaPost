@@ -23,6 +23,7 @@ from app.models import (
     PolicyCheck,
     PlatformAccount,
     PublicationJob,
+    SourceMediaAsset,
     SourceMetric,
     SourceVideo,
     TaskRun,
@@ -132,16 +133,6 @@ class WorkflowService:
             run.summary = {"reason": "global_pause"}
             self.db.commit()
             return run
-
-        # Persist the parent workflow before per-candidate transactions begin.
-        # Otherwise a candidate rollback also removes the workflow row and
-        # causes subsequent task_runs inserts to violate their foreign key.
-        run_id = run.id
-        self.db.commit()
-        run = self.db.get(WorkflowRun, run_id)
-        if run is None:
-            raise RuntimeError("Content workflow run could not be persisted")
-
         candidates = self.db.execute(
             select(TrendCandidate)
             .where(TrendCandidate.selected.is_(True), TrendCandidate.deleted_at.is_(None))
@@ -154,12 +145,6 @@ class WorkflowService:
         per_platform_queued = {"tiktok": 0, "instagram": 0, "youtube": 0}
         for candidate in candidates:
             task = self._start_task(run, "generate_content_package", candidate.id)
-            task_id = task.id
-
-            # Persist the task before media generation. A rendering rollback
-            # must not erase either the workflow or its task record.
-            self.db.commit()
-
             try:
                 package = self._generate_for_candidate(candidate, run)
                 queued = self._queue_auto_publications(package, per_platform_queued)
@@ -170,14 +155,12 @@ class WorkflowService:
             except Exception as exc:
                 failed += 1
                 self.db.rollback()
-                task = self.db.get(TaskRun, task_id)
+                task = self.db.get(TaskRun, task.id)
                 if task:
                     self._finish_task(task, "failed", error=str(exc))
                     self.db.commit()
                 logger.exception("Content generation failed for candidate", extra={"context": {"candidate_id": candidate.id}})
-        run = self.db.get(WorkflowRun, run_id)
-        if run is None:
-            raise RuntimeError("Content workflow run disappeared unexpectedly")
+        run = self.db.get(WorkflowRun, run.id) or run
         run.status = "succeeded" if generated else "failed" if failed else "succeeded"
         run.finished_at = datetime.now(UTC)
         run.summary = {"generated_packages": generated, "failed_items": failed, "candidate_count": len(candidates), "auto_publications_queued": auto_queued}
@@ -230,20 +213,20 @@ class WorkflowService:
             raise RuntimeError("No concept selected")
         package_payload = self.generator.generate_package(selected_concept.concept, source_payload, brand)
         originality = originality_report(package_payload, source_payload)
-        compliance = policy_report(package_payload)
+        compliance = policy_report(package_payload, rights=self._rights_for_source(source_payload))
         idempotency_key = hashlib.sha256(f"{candidate.id}:{selected_concept.id}:{self.generator.version}".encode()).hexdigest()
         existing = self.db.execute(
             select(ContentPackage).where(ContentPackage.idempotency_key == idempotency_key)
         ).scalar_one_or_none()
         if existing:
             return existing
+        package_id = str(uuid.uuid4())
         package = ContentPackage(
+            id=package_id,
             concept_id=selected_concept.id,
             status="draft",
             title=package_payload["title"],
-            storage_path=str(
-                self.storage.root / "generated" / idempotency_key
-            ),
+            storage_path=str(self.storage.root / "generated" / package_id),
             quality_score=0,
             predicted_performance=package_payload["predicted_performance_range"],
             generation_metadata={**package_payload["generation_metadata"], "workflow_run_id": run.id},
@@ -319,7 +302,7 @@ class WorkflowService:
                         sha256=self.storage.sha256(path),
                         size_bytes=path.stat().st_size,
                         mime_type=self._mime(path),
-                        rights_status="original",
+                        rights_status=(source_payload.get("source_media") or {}).get("rights_status", "original"),
                     )
                 )
             if target_status == "ready_to_post":
@@ -327,9 +310,7 @@ class WorkflowService:
             quality_scores.append(rendered["quality_score"])
         package.status = "ready_to_post" if target_status == "ready_to_post" else "review"
         package.quality_score = round(sum(quality_scores) / len(quality_scores), 2)
-        package.storage_path = str(
-            self.storage.root / "generated" / package.id
-        )
+        package.storage_path = str(self.storage.root / "generated" / package.id)
         record_audit(
             self.db,
             "content_package.generated",
@@ -485,7 +466,49 @@ class WorkflowService:
                 "shares": latest_metric.shares,
                 "saves": latest_metric.saves,
             }
+        source_media = self.db.execute(
+            select(SourceMediaAsset)
+            .where(
+                SourceMediaAsset.source_video_id == source.id,
+                SourceMediaAsset.deleted_at.is_(None),
+            )
+            .order_by(desc(SourceMediaAsset.created_at))
+        ).scalars().first()
+        if source_media:
+            payload["source_media"] = {
+                "id": source_media.id,
+                "path": source_media.path,
+                "mime_type": source_media.mime_type,
+                "size_bytes": source_media.size_bytes,
+                "sha256": source_media.sha256,
+                "media_validation": source_media.media_validation,
+                "rights_status": source_media.rights_status,
+                "rights_owner": source_media.rights_owner,
+                "license_reference": source_media.license_reference,
+                "allow_full_reuse": source_media.allow_full_reuse,
+            }
         return payload
+
+    @staticmethod
+    def _rights_for_source(source: dict[str, Any]) -> dict[str, str]:
+        asset = source.get("source_media") or {}
+        if not asset:
+            return {
+                "music": "original_or_none",
+                "footage": "original",
+                "images": "original",
+                "voice": "synthetic_local_or_user_authorized",
+                "fonts": "system_or_open_license",
+            }
+        allowed = {"user_owned", "licensed", "public_domain", "explicit_permission"}
+        footage = asset.get("rights_status") if asset.get("allow_full_reuse") and asset.get("rights_status") in allowed else "unverified"
+        return {
+            "music": footage,
+            "footage": footage,
+            "images": "original_or_embedded_in_authorized_footage",
+            "voice": "synthetic_local_or_user_authorized",
+            "fonts": "system_or_open_license",
+        }
 
     def _load_demo_trends(self) -> list[NormalizedVideo]:
         locations = [Path("fixtures/trends.json"), Path("../fixtures/trends.json"), Path("/app/fixtures/trends.json")]

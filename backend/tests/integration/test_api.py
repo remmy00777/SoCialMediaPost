@@ -78,3 +78,120 @@ def test_portal_and_root_redirect(client: TestClient):
 def test_managed_file_rejects_traversal(client: TestClient):
     response = client.get('/files/../../etc/passwd')
     assert response.status_code in {404, 422}
+
+
+def test_authorized_source_voiceover_and_permanent_delete(client: TestClient, csrf: dict[str, str], tmp_path: Path):
+    import subprocess
+
+    imported = client.post(
+        "/api/trends/import",
+        headers=csrf,
+        json={
+            "platform": "youtube",
+            "url": "https://youtu.be/owned-demo",
+            "title": "Attention management demonstration",
+            "topic": "attention management",
+            "metrics": {"views": 50000},
+        },
+    )
+    assert imported.status_code == 200, imported.text
+    candidate_id = imported.json()["candidate_id"]
+
+    source = tmp_path / "owned-source.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=360x640:r=24:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    with source.open("rb") as handle:
+        uploaded = client.post(
+            f"/api/trends/{candidate_id}/source-media",
+            headers=csrf,
+            files={"file": (source.name, handle, "video/mp4")},
+            data={
+                "rights_status": "user_owned",
+                "rights_owner": "Test User",
+                "license_reference": "",
+                "allow_full_reuse": "true",
+            },
+        )
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.json()["source_media"]["allow_full_reuse"] is True
+
+    generated = client.post("/api/workflows/content?max_items=1", headers=csrf)
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["status"] == "succeeded"
+    packages = client.get("/api/content-packages").json()
+    assert len(packages) == 1
+    package = packages[0]
+    assert package["generation_metadata"]["source_media_used"] is True
+    assert len(package["variants"]) == 3
+    for variant in package["variants"]:
+        media = Path(variant["media_path"])
+        assert media.exists()
+        probe = probe_media(media)
+        assert probe["valid"]
+        assert probe["duration"] > 2
+        metadata = variant["metadata_json"]
+        assert metadata["content_mode"] == "authorized_source_with_voiceover_intro"
+
+    deleted = client.request(
+        "DELETE",
+        f"/api/content-packages/{package['id']}/permanent",
+        headers=csrf,
+        json={"confirmation": "DELETE"},
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] is True
+    assert deleted.json()["files_deleted"] > 0
+    assert client.get(f"/api/content-packages/{package['id']}").status_code == 404
+
+
+def test_accounts_endpoint_supports_multiple_accounts(client: TestClient):
+    from app.core.db import SessionLocal
+    from app.models import PlatformAccount, User
+
+    with SessionLocal() as db:
+        user = db.query(User).first()
+        db.add_all(
+            [
+                PlatformAccount(
+                    user_id=user.id,
+                    platform="youtube",
+                    external_account_id="channel-a",
+                    display_name="Channel A",
+                    authorization_status="connected",
+                ),
+                PlatformAccount(
+                    user_id=user.id,
+                    platform="youtube",
+                    external_account_id="channel-b",
+                    display_name="Channel B",
+                    authorization_status="connected",
+                ),
+            ]
+        )
+        db.commit()
+    rows = client.get("/api/accounts").json()
+    youtube = next(row for row in rows if row["platform"] == "youtube")
+    assert youtube["multiple_accounts_supported"] is True
+    assert {item["display_name"] for item in youtube["accounts"]} == {"Channel A", "Channel B"}
