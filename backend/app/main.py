@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from collections import defaultdict, deque
@@ -24,6 +25,7 @@ from app.services.storage import StorageManager
 
 settings = get_settings()
 configure_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -77,6 +79,7 @@ rate_buckets: dict[str, deque[float]] = defaultdict(deque)
 @app.middleware("http")
 async def security_and_rate_limit(request: Request, call_next):
     correlation_id = request.headers.get("X-Correlation-ID") or secrets.token_hex(12)
+    request.state.correlation_id = correlation_id
     client = request.client.host if request.client else "local"
     now = time.monotonic()
     bucket = rate_buckets[client]
@@ -100,10 +103,26 @@ async def security_and_rate_limit(request: Request, call_next):
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception(_: Request, exc: Exception) -> JSONResponse:
+async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
+    correlation_id = getattr(request.state, "correlation_id", "unknown")
+    logger.exception(
+        "Unhandled application error",
+        extra={
+            "context": {
+                "correlation_id": correlation_id,
+                "method": request.method,
+                "path": request.url.path,
+                "error_type": type(exc).__name__,
+            }
+        },
+    )
     return JSONResponse(
         status_code=500,
-        content={"detail": "An unexpected error occurred", "error_type": type(exc).__name__},
+        content={
+            "detail": "An unexpected error occurred",
+            "error_type": type(exc).__name__,
+            "correlation_id": correlation_id,
+        },
     )
 
 
