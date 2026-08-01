@@ -241,7 +241,9 @@ class WorkflowService:
             concept_id=selected_concept.id,
             status="draft",
             title=package_payload["title"],
-            storage_path=str(self.storage.root / "generated"),
+            storage_path=str(
+                self.storage.root / "generated" / idempotency_key
+            ),
             quality_score=0,
             predicted_performance=package_payload["predicted_performance_range"],
             generation_metadata={**package_payload["generation_metadata"], "workflow_run_id": run.id},
@@ -325,7 +327,9 @@ class WorkflowService:
             quality_scores.append(rendered["quality_score"])
         package.status = "ready_to_post" if target_status == "ready_to_post" else "review"
         package.quality_score = round(sum(quality_scores) / len(quality_scores), 2)
-        package.storage_path = str(self.storage.root / "generated")
+        package.storage_path = str(
+            self.storage.root / "generated" / package.id
+        )
         record_audit(
             self.db,
             "content_package.generated",
