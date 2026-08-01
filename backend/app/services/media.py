@@ -94,18 +94,32 @@ class MediaRenderer:
         }
 
     def _render_video(self, output: Path, subtitles: Path, duration: int) -> None:
-        escaped = str(subtitles).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+        escaped = str(subtitles).replace("\", "/").replace(":", "\:").replace("'", "\'")
         filter_chain = (
             "subtitles='" + escaped + "':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00101828,BorderStyle=3,Outline=1,Shadow=0,MarginV=180,Alignment=2'"
         )
+
+        # Railway containers can report a high CPU count while having limited
+        # memory. Explicitly constrain FFmpeg and x264 resource consumption.
+        demo_mode = self.storage.settings.demo_mode
+        frame_size = "720x1280" if demo_mode else "1080x1920"
+        frame_rate = 20 if demo_mode else 24
+        audio_filter = (
+            "volume=0.025,aresample=48000"
+            if demo_mode
+            else "volume=0.025,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000"
+        )
+
         command = [
             self.ffmpeg,
             "-y",
+            "-filter_threads",
+            "1",
             "-f",
             "lavfi",
             "-i",
-            f"color=c=0x101828:s=1080x1920:r=24:d={duration}",
+            f"color=c=0x101828:s={frame_size}:r={frame_rate}:d={duration}",
             "-f",
             "lavfi",
             "-i",
@@ -113,13 +127,17 @@ class MediaRenderer:
             "-vf",
             filter_chain,
             "-af",
-            "volume=0.025,loudnorm=I=-16:TP=-1.5:LRA=11",
+            audio_filter,
             "-c:v",
             "libx264",
             "-preset",
             "ultrafast",
             "-tune",
             "stillimage",
+            "-threads:v",
+            "2",
+            "-x264-params",
+            "threads=2",
             "-pix_fmt",
             "yuv420p",
             "-profile:v",
@@ -130,6 +148,8 @@ class MediaRenderer:
             "aac",
             "-b:a",
             "128k",
+            "-ar",
+            "48000",
             "-movflags",
             "+faststart",
             "-shortest",
@@ -142,6 +162,8 @@ class MediaRenderer:
             [
                 self.ffmpeg,
                 "-y",
+                "-filter_threads",
+                "1",
                 "-i",
                 str(source),
                 "-vf",
@@ -150,12 +172,18 @@ class MediaRenderer:
                 "libx264",
                 "-preset",
                 "veryfast",
+                "-threads:v",
+                "2",
+                "-x264-params",
+                "threads=2",
                 "-crf",
                 "30",
                 "-c:a",
                 "aac",
                 "-b:a",
                 "64k",
+                "-ar",
+                "48000",
                 "-movflags",
                 "+faststart",
                 str(output),
@@ -206,6 +234,21 @@ class MediaRenderer:
     @staticmethod
     def _run(command: list[str | None], timeout: int) -> None:
         clean = [item for item in command if item is not None]
-        result = subprocess.run(clean, capture_output=True, text=True, check=False, timeout=timeout)
+        try:
+            result = subprocess.run(
+                clean,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise MediaRenderError(
+                f"FFmpeg timed out after {timeout} seconds"
+            ) from exc
+
         if result.returncode != 0:
-            raise MediaRenderError(result.stderr[-2000:] or "ffmpeg command failed")
+            details = result.stderr[-4000:] or "FFmpeg command failed"
+            raise MediaRenderError(
+                f"FFmpeg exited with code {result.returncode}: {details}"
+            )

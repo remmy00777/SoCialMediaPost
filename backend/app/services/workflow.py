@@ -132,6 +132,16 @@ class WorkflowService:
             run.summary = {"reason": "global_pause"}
             self.db.commit()
             return run
+
+        # Persist the parent workflow before per-candidate transactions begin.
+        # Otherwise a candidate rollback also removes the workflow row and
+        # causes subsequent task_runs inserts to violate their foreign key.
+        run_id = run.id
+        self.db.commit()
+        run = self.db.get(WorkflowRun, run_id)
+        if run is None:
+            raise RuntimeError("Content workflow run could not be persisted")
+
         candidates = self.db.execute(
             select(TrendCandidate)
             .where(TrendCandidate.selected.is_(True), TrendCandidate.deleted_at.is_(None))
@@ -144,6 +154,12 @@ class WorkflowService:
         per_platform_queued = {"tiktok": 0, "instagram": 0, "youtube": 0}
         for candidate in candidates:
             task = self._start_task(run, "generate_content_package", candidate.id)
+            task_id = task.id
+
+            # Persist the task before media generation. A rendering rollback
+            # must not erase either the workflow or its task record.
+            self.db.commit()
+
             try:
                 package = self._generate_for_candidate(candidate, run)
                 queued = self._queue_auto_publications(package, per_platform_queued)
@@ -154,12 +170,14 @@ class WorkflowService:
             except Exception as exc:
                 failed += 1
                 self.db.rollback()
-                task = self.db.get(TaskRun, task.id)
+                task = self.db.get(TaskRun, task_id)
                 if task:
                     self._finish_task(task, "failed", error=str(exc))
                     self.db.commit()
                 logger.exception("Content generation failed for candidate", extra={"context": {"candidate_id": candidate.id}})
-        run = self.db.get(WorkflowRun, run.id) or run
+        run = self.db.get(WorkflowRun, run_id)
+        if run is None:
+            raise RuntimeError("Content workflow run disappeared unexpectedly")
         run.status = "succeeded" if generated else "failed" if failed else "succeeded"
         run.finished_at = datetime.now(UTC)
         run.summary = {"generated_packages": generated, "failed_items": failed, "candidate_count": len(candidates), "auto_publications_queued": auto_queued}
