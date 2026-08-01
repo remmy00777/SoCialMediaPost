@@ -23,3 +23,8 @@ frontend/.env.local
 .env.local
 *.pem
 *.key
+
+.railway/
+storage/*.db
+storage/*.db-journal
+storage/celerybeat-schedule

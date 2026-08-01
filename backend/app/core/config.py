@@ -115,8 +115,9 @@ class Settings(BaseSettings):
     @field_validator("host")
     @classmethod
     def localhost_only_by_default(cls, value: str) -> str:
-        if value not in {"127.0.0.1", "localhost", "::1"}:
-            raise ValueError("HOST must bind to localhost. Use a reverse proxy only after threat review.")
+        allowed_hosts = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+        if value not in allowed_hosts:
+            raise ValueError("HOST must be localhost or 0.0.0.0 for an authenticated production deployment.")
         return value
 
     @field_validator("session_secret")
