@@ -901,7 +901,7 @@ def oauth_callback(
             actor_id=user_id or None,
         )
     db.commit()
-    portal_url = f"{str(request.base_url).rstrip('/')}/portal/#accounts"
+    portal_url = f"{settings.public_base_url.rstrip('/')}/portal/#accounts"
     return RedirectResponse(url=portal_url)
 
 

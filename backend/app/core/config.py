@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8765
     frontend_port: int = 3000
+    public_base_url: str = "http://127.0.0.1:8080"
     timezone: str = "America/Chicago"
     demo_mode: bool = True
     auth_required: bool = True
