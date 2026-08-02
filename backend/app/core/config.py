@@ -146,5 +146,19 @@ def get_settings() -> Settings:
     if settings.database_url.startswith("sqlite:///./"):
         relative = settings.database_url.removeprefix("sqlite:///")
         settings.database_url = f"sqlite:///{(PROJECT_ROOT / relative).resolve()}"
+
+    if settings.database_url.startswith("postgres://"):
+        settings.database_url = settings.database_url.replace(
+            "postgres://",
+            "postgresql+psycopg://",
+            1,
+        )
+    elif settings.database_url.startswith("postgresql://"):
+        settings.database_url = settings.database_url.replace(
+            "postgresql://",
+            "postgresql+psycopg://",
+            1,
+        )
+
     settings.ensure_directories()
     return settings
