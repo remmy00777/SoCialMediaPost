@@ -810,7 +810,13 @@ def connect_account(platform: str, db: Session = Depends(get_db), user: User | N
 
 
 @router.get("/accounts/{platform}/callback")
-def oauth_callback(platform: str, code: str, state: str, db: Session = Depends(get_db)) -> RedirectResponse:
+def oauth_callback(
+    platform: str,
+    code: str,
+    state: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
     payload = SessionSigner().verify(state)
     subject = str(payload["sub"])
     if not subject.startswith(f"oauth:{platform}:"):
@@ -895,7 +901,8 @@ def oauth_callback(platform: str, code: str, state: str, db: Session = Depends(g
             actor_id=user_id or None,
         )
     db.commit()
-    return RedirectResponse(url="/portal/#accounts")
+    portal_url = f"{str(request.base_url).rstrip('/')}/portal/#accounts"
+    return RedirectResponse(url=portal_url)
 
 
 def _platform_account_for_user(

@@ -39,7 +39,155 @@ function hero(text,actions=''){return `<div class="hero"><div><p>${esc(text)}</p
 async function dashboard(){setTitle('Dashboard','SYSTEM OVERVIEW');await loadCommon();const o=state.overview;const latest=o.latest_trends||[];q('#content').innerHTML=hero('A single view of discovery, production, publishing controls, analytics, and system health.',`<button data-act="demo">Run Demo Workflow</button><button class="secondary" data-act="trends">Discover Trends</button>`)+`<div class="grid">${card('System Status',`<div class="metric">${esc(o.system_status)}</div><p class="muted">Internet: ${esc(o.internet_status)} · Scheduler: ${esc(o.scheduler_status)}</p>`)}${card('Pending Approval',`<div class="metric">${o.pending_approvals}</div><p class="muted">Packages requiring review or export.</p>`)}${card('Storage Used',`<div class="metric">${fmtBytes(o.storage_usage?.used_bytes)}</div><p class="muted">${esc(o.storage_usage?.file_count||0)} files under managed storage.</p>`)}${card('Latest Trends',latest.length?`<div class="list">${latest.map(t=>`<div class="list-item"><div><strong>${esc(t.title)}</strong><small>${esc(t.platform)}</small></div><span class="tag">${Number(t.score).toFixed(1)}</span></div>`).join('')}</div>`:'<div class="empty">Run discovery to populate trends.</div>','wide')}${card('Workflow',o.last_successful_workflow?json(o.last_successful_workflow):'<div class="empty">No workflow has run.</div>')}${card('Guardrails',`<div class="list"><div class="list-item"><span>Demo mode</span><strong>${o.demo_mode?'ON':'OFF'}</strong></div><div class="list-item"><span>Automatic publishing</span><strong>${o.auto_publish_enabled?'ON':'OFF'}</strong></div><div class="list-item"><span>Publishing failures</span><strong>${o.publishing_failures}</strong></div></div>`)}</div>`;bindActions()}
 async function onboarding(){setTitle('Onboarding','SETUP');const brand=await request('/brand-profile');q('#content').innerHTML=hero('Define the brand, target audience, languages, topics, and approval posture before content is generated.')+card('Brand Profile',`<form id="brand-form" class="form-grid"><div class="field"><label>Brand name</label><input name="name" value="${esc(brand.name||'')}" required></div><div class="field"><label>Niche</label><input name="niche" value="${esc(brand.niche||'')}"></div><div class="field full"><label>Target audience</label><textarea name="target_audience">${esc(brand.target_audience||'')}</textarea></div><div class="field"><label>Brand voice</label><input name="brand_voice" value="${esc(brand.brand_voice||'clear, expert, human')}"></div><div class="field"><label>Preferred duration, seconds</label><input type="number" min="5" max="3600" name="preferred_duration_seconds" value="${esc(brand.preferred_duration_seconds||30)}"></div><div class="field"><label>Countries, comma separated</label><input name="countries" value="${esc((brand.countries||['US']).join(','))}"></div><div class="field"><label>Languages, comma separated</label><input name="languages" value="${esc((brand.languages||['en']).join(','))}"></div><div class="field full"><button type="submit">Save and approve brand profile</button></div></form>`,'full');q('#brand-form').onsubmit=saveBrand}
 async function saveBrand(e){e.preventDefault();const d=new FormData(e.target);const payload={name:d.get('name'),niche:d.get('niche'),target_audience:d.get('target_audience'),brand_voice:d.get('brand_voice'),countries:String(d.get('countries')).split(',').map(v=>v.trim()).filter(Boolean),languages:String(d.get('languages')).split(',').map(v=>v.trim()).filter(Boolean),topics_include:[],topics_exclude:[],approval_mode:'manual_export',preferred_duration_seconds:Number(d.get('preferred_duration_seconds')),preferred_voice:'local',approved:true};await request('/brand-profile',{method:'PUT',body:JSON.stringify(payload)});notify('Brand profile saved and approved.')}
-async function accounts(){setTitle('Connected Accounts','PLATFORM ACCESS');const rows=await request('/accounts');q('#content').innerHTML=hero('Connect multiple accounts under one application login. OAuth credentials are encrypted, and platform passwords are never stored.')+`<div class="grid">${['youtube','tiktok','instagram'].map(p=>{const rec=rows.find(x=>x.platform===p);const list=rec?.accounts||[];const items=list.length?`<div class="list">${list.map(a=>`<div class="list-item"><div><strong>${esc(a.display_name||a.external_account_id||p)}</strong><small>${esc(a.account_type||'account')} · ${esc(a.authorization_status)}</small></div><div class="action-row"><button class="secondary" data-test-account="${esc(a.id)}">Test</button><button class="danger" data-disconnect-account="${esc(a.id)}">Disconnect</button></div></div>`).join('')}</div>`:'<p class="muted">No account is connected yet.</p>';const body=`${items}<div class="action-row"><button data-connect="${p}">Connect another ${p[0].toUpperCase()+p.slice(1)} account</button></div><details><summary>Integration health</summary>${json(rec?.health||{})}</details>`;return card(p[0].toUpperCase()+p.slice(1),body)}).join('')}</div>`;document.querySelectorAll('[data-connect]').forEach(b=>b.onclick=async()=>{try{const r=await request(`/accounts/${b.dataset.connect}/connect`,{method:'POST'});if(r.authorization_url)location.href=r.authorization_url;else notify(JSON.stringify(r))}catch(e){notify(e.message,true)}});document.querySelectorAll('[data-test-account]').forEach(b=>b.onclick=async()=>{try{notify(JSON.stringify(await request(`/platform-accounts/${b.dataset.testAccount}/test`,{method:'POST'})))}catch(e){notify(e.message,true)}});document.querySelectorAll('[data-disconnect-account]').forEach(b=>b.onclick=async()=>{if(!confirm('Disconnect this social-media account?'))return;try{await request(`/platform-accounts/${b.dataset.disconnectAccount}/disconnect`,{method:'POST'});notify('Account disconnected.');await accounts()}catch(e){notify(e.message,true)}})}
+function connectedAccountName(account, platform){
+  const instagram = account.raw_profile?.instagram_business_account || {};
+  const current = String(account.display_name || '').trim();
+
+  if(platform === 'instagram' && instagram.username){
+    return `@${String(instagram.username).replace(/^@/, '')}`;
+  }
+
+  if(current && current.toLowerCase() !== platform){
+    return current;
+  }
+
+  return account.external_account_id || `${platform} account`;
+}
+
+async function accounts(){
+  setTitle('Connected Accounts','PLATFORM ACCESS');
+  const rows = await request('/accounts');
+
+  const cards = ['youtube','tiktok','instagram'].map(platform => {
+    const record = rows.find(item => item.platform === platform);
+    const accounts = record?.accounts || [];
+    const connectedAccounts = accounts.filter(
+      account => account.authorization_status === 'connected'
+    );
+    const connected = connectedAccounts.length > 0;
+    const label = platform[0].toUpperCase() + platform.slice(1);
+
+    const statusBar = connected
+      ? `<div class="account-status-bar connected">
+           <span class="account-status-dot"></span>
+           <span>Connected</span>
+         </div>`
+      : '';
+
+    const accountList = connected
+      ? `<div class="list">
+          ${connectedAccounts.map(account => `
+            <div class="list-item">
+              <div class="account-summary">
+                <strong>${esc(connectedAccountName(account, platform))}</strong>
+                <small>
+                  ${esc(account.account_type || 'Professional account')}
+                  · ${esc(account.token_health || 'unknown')}
+                </small>
+              </div>
+              <div class="action-row">
+                <button
+                  class="secondary"
+                  data-test-account="${esc(account.id)}"
+                >Test</button>
+                <button
+                  class="danger"
+                  data-disconnect-account="${esc(account.id)}"
+                >Disconnect</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>`
+      : `<p class="muted">
+           Not connected. Configure client credentials before authorization.
+         </p>`;
+
+    const connectButton = connected
+      ? `<button class="secondary" data-connect="${platform}">
+           Connect another ${label} account
+         </button>`
+      : `<button data-connect="${platform}">
+           Connect ${label}
+         </button>`;
+
+    const body = `
+      ${statusBar}
+      ${accountList}
+      <div class="action-row account-card-actions">
+        ${connectButton}
+      </div>
+      <details class="integration-health">
+        <summary>Integration health</summary>
+        ${json(record?.health || {})}
+      </details>
+    `;
+
+    return card(label, body);
+  }).join('');
+
+  q('#content').innerHTML =
+    hero(
+      'Connect multiple accounts under one application login. OAuth credentials are encrypted, and platform passwords are never stored.'
+    ) +
+    `<div class="grid">${cards}</div>`;
+
+  document.querySelectorAll('[data-connect]').forEach(button => {
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const result = await request(
+          `/accounts/${button.dataset.connect}/connect`,
+          {method: 'POST'}
+        );
+
+        if(result.authorization_url){
+          location.href = result.authorization_url;
+        } else {
+          notify(JSON.stringify(result));
+        }
+      } catch(error) {
+        notify(error.message, true);
+        button.disabled = false;
+      }
+    };
+  });
+
+  document.querySelectorAll('[data-test-account]').forEach(button => {
+    button.onclick = async () => {
+      try {
+        const result = await request(
+          `/platform-accounts/${button.dataset.testAccount}/test`,
+          {method: 'POST'}
+        );
+        notify('Account connection verified successfully.');
+        console.log(result);
+        await accounts();
+      } catch(error) {
+        notify(error.message, true);
+      }
+    };
+  });
+
+  document.querySelectorAll('[data-disconnect-account]').forEach(button => {
+    button.onclick = async () => {
+      if(!confirm('Disconnect this social-media account?')){
+        return;
+      }
+
+      try {
+        await request(
+          `/platform-accounts/${button.dataset.disconnectAccount}/disconnect`,
+          {method: 'POST'}
+        );
+        notify('Account disconnected.');
+        await accounts();
+      } catch(error) {
+        notify(error.message, true);
+      }
+    };
+  });
+}
+
 async function trends(){setTitle('Trend Explorer','DISCOVERY');state.trends=await request('/trends');q('#content').innerHTML=hero('Candidates are ranked by transparent opportunity scores. Missing official metrics lower confidence.',`<button data-act="trends">Run Discovery</button><button class="secondary" data-act="demo">Run Demo</button>`)+card('Ranked Candidates',table(state.trends,[['Rank',r=>esc(r.rank||'–')],['Platform','platform'],['Title',r=>`<strong>${esc(r.title)}</strong><br><small class="muted">${esc(r.source_label||r.data_source)}</small>`],['Score',r=>`<span class="tag">${Number(r.score).toFixed(1)}</span>`],['Confidence',r=>`${Math.round(Number(r.score_confidence||0)*100)}%`],['Selected',r=>r.selected?'Yes':'No']]),'full');bindActions()}
 async function detail(){setTitle('Trend Detail','EVIDENCE');const trends=await request('/trends');if(!trends.length){q('#content').innerHTML='<div class="empty">No trend is available. Run discovery first.</div>';return}const candidateId=trends[0].candidate_id;const [item,media]=await Promise.all([request(`/trends/${candidateId}`),request(`/trends/${candidateId}/source-media`)]);const rightsForm=`<form id="source-media-form" class="form-grid"><div class="field full"><label>Authorized source video</label><input type="file" name="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" required></div><div class="field"><label>Rights status</label><select name="rights_status"><option value="user_owned">I own this media</option><option value="licensed">Licensed</option><option value="explicit_permission">Explicit permission</option><option value="public_domain">Public domain</option></select></div><div class="field"><label>Rights owner</label><input name="rights_owner" required></div><div class="field full"><label>License or permission reference</label><input name="license_reference" placeholder="Required for licensed, permission, or public-domain media"></div><div class="field full"><label><input type="checkbox" name="allow_full_reuse" value="true" required> I confirm that the full clip may be reused and published</label></div><div class="field full"><button type="submit">Upload for voiceover-intro generation</button>${media.source_media?` <button type="button" class="danger" id="delete-source-media">Delete source media</button>`:''}</div></form>`;q('#content').innerHTML=`<div class="grid">${card('Source Observation',json(item.source_video),'half')}${card('Transparent Score',json(item.score),'half')}${card('Authorized Clip Remix',`${media.source_media?json(media.source_media):'<p class="muted">No authorized clip uploaded. The system will generate original media instead.</p>'}${rightsForm}`,'full')}${card('Model Interpretation',json(item.analysis||{status:'Run content generation to create an analysis.'}),'full')}</div>`;q('#source-media-form').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{await uploadRequest(`/trends/${candidateId}/source-media`,form);notify('Authorized source clip uploaded. Generate content to prepend a voiceover introduction.');await detail()}catch(err){notify(err.message,true)}};const del=q('#delete-source-media');if(del)del.onclick=async()=>{const value=prompt('Type DELETE to permanently remove the uploaded source clip.');if(value!=='DELETE')return;try{await request(`/trends/${candidateId}/source-media`,{method:'DELETE',body:JSON.stringify({confirmation:'DELETE'})});notify('Source media permanently deleted.');await detail()}catch(err){notify(err.message,true)}}}
 async function packagesPage(mode){const titles={concepts:'Content Concepts',studio:'Content Studio',preview:'Video Preview',review:'Review & Approval',ready:'Ready to Post',calendar:'Publishing Calendar',published:'Published Content'};setTitle(titles[mode],'CONTENT OPERATIONS');state.packages=await request('/content-packages');const filtered=mode==='published'?state.packages.filter(p=>p.status==='published'):mode==='ready'?state.packages.filter(p=>['ready_to_post','review','draft','approved'].includes(p.status)):state.packages;q('#content').innerHTML=hero('Inspect, download, or permanently delete packages. Permanent deletion removes all generated variants and cannot be undone.',`<button data-act="content">Generate Content</button>`)+card('Content Packages',table(filtered,[['Created',r=>esc((r.created_at||'').replace('T',' ').slice(0,19))],['ID',r=>`<code>${esc(String(r.id).slice(0,12))}</code>`],['Status',r=>`<span class="tag">${esc(r.status)}</span>`],['Storage',r=>fmtBytes(r.storage_bytes||0)],['Actions',r=>`<div class="action-row"><button class="secondary" data-package="${esc(r.id)}">Inspect</button><button class="danger" data-delete-package="${esc(r.id)}">Delete permanently</button></div>`]]),'full');bindActions();document.querySelectorAll('[data-package]').forEach(b=>b.onclick=()=>inspectPackage(b.dataset.package,mode));document.querySelectorAll('[data-delete-package]').forEach(b=>b.onclick=()=>permanentDeletePackage(b.dataset.deletePackage))}
