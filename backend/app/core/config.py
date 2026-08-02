@@ -78,6 +78,7 @@ class Settings(BaseSettings):
 
     meta_app_id: str | None = None
     meta_app_secret: str | None = None
+    meta_login_config_id: str | None = None
     instagram_redirect_uri: str = "http://127.0.0.1:8765/api/accounts/instagram/callback"
     meta_graph_version: str = "v24.0"
 

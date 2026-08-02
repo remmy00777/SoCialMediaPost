@@ -37,20 +37,15 @@ class InstagramAdapter(PlatformAdapter):
     def connect_account(self, state: str) -> str:
         if not self.settings.meta_app_id:
             raise PlatformAPIError("Meta app ID is not configured")
+        if not self.settings.meta_login_config_id:
+            raise PlatformAPIError("Meta Login for Business configuration ID is not configured")
         params = {
             "client_id": self.settings.meta_app_id,
+            "config_id": self.settings.meta_login_config_id,
             "redirect_uri": self.settings.instagram_redirect_uri,
             "state": state,
             "response_type": "code",
-            "scope": ",".join(
-                [
-                    "instagram_basic",
-                    "instagram_content_publish",
-                    "instagram_manage_insights",
-                    "pages_show_list",
-                    "pages_read_engagement",
-                ]
-            ),
+            "override_default_response_type": "true",
         }
         return "https://www.facebook.com/dialog/oauth?" + urlencode(params)
 
