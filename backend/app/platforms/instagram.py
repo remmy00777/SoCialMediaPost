@@ -38,7 +38,10 @@ class InstagramAdapter(PlatformAdapter):
         if not self.settings.meta_app_id:
             raise PlatformAPIError("Meta app ID is not configured")
         if not self.settings.meta_login_config_id:
-            raise PlatformAPIError("Meta Login for Business configuration ID is not configured")
+            raise PlatformAPIError(
+                "Meta Login for Business configuration ID is not configured"
+            )
+
         params = {
             "client_id": self.settings.meta_app_id,
             "config_id": self.settings.meta_login_config_id,
@@ -47,6 +50,7 @@ class InstagramAdapter(PlatformAdapter):
             "response_type": "code",
             "override_default_response_type": "true",
         }
+
         return "https://www.facebook.com/dialog/oauth?" + urlencode(params)
 
     def exchange_code(self, code: str) -> dict[str, Any]:
@@ -96,6 +100,7 @@ class InstagramAdapter(PlatformAdapter):
                 "instagram_manage_insights",
                 "pages_show_list",
                 "pages_read_engagement",
+                "business_management",
             ],
         }
 
@@ -236,7 +241,11 @@ class InstagramAdapter(PlatformAdapter):
         return {"accepted": True, "entries": len(payload.get("entry", [])), "signature_present": bool(signature)}
 
     def health_check(self) -> AdapterHealth:
-        configured = bool(self.settings.meta_app_id and self.settings.meta_app_secret)
+        configured = bool(
+            self.settings.meta_app_id
+            and self.settings.meta_app_secret
+            and self.settings.meta_login_config_id
+        )
         return AdapterHealth(
             platform=self.platform,
             status="configured" if configured else "needs_configuration",
