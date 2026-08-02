@@ -188,10 +188,397 @@ async function accounts(){
   });
 }
 
-async function trends(){setTitle('Trend Explorer','DISCOVERY');state.trends=await request('/trends');q('#content').innerHTML=hero('Candidates are ranked by transparent opportunity scores. Missing official metrics lower confidence.',`<button data-act="trends">Run Discovery</button><button class="secondary" data-act="demo">Run Demo</button>`)+card('Ranked Candidates',table(state.trends,[['Rank',r=>esc(r.rank||'–')],['Platform','platform'],['Title',r=>`<strong>${esc(r.title)}</strong><br><small class="muted">${esc(r.source_label||r.data_source)}</small>`],['Score',r=>`<span class="tag">${Number(r.score).toFixed(1)}</span>`],['Confidence',r=>`${Math.round(Number(r.score_confidence||0)*100)}%`],['Selected',r=>r.selected?'Yes':'No']]),'full');bindActions()}
+async function trends(){
+  setTitle('Trend Explorer','DISCOVERY');
+
+  state.trends = await request('/trends');
+
+  const importForm = `
+    <form id="trend-import-form" class="form-grid">
+      <div class="field">
+        <label>Platform</label>
+        <select name="platform">
+          <option value="youtube">YouTube</option>
+          <option value="instagram">Instagram</option>
+        </select>
+      </div>
+
+      <div class="field full">
+        <label>Viral post URL</label>
+        <input
+          name="url"
+          type="url"
+          placeholder="Paste a YouTube video, Short, or Instagram Reel URL"
+          required
+        >
+      </div>
+
+      <div class="field">
+        <label>Title</label>
+        <input name="title">
+      </div>
+
+      <div class="field">
+        <label>Topic</label>
+        <input name="topic">
+      </div>
+
+      <div class="field">
+        <label>Visible views</label>
+        <input name="views" type="number" min="0">
+      </div>
+
+      <div class="field">
+        <label>Visible likes</label>
+        <input name="likes" type="number" min="0">
+      </div>
+
+      <div class="field">
+        <label>Visible comments</label>
+        <input name="comments" type="number" min="0">
+      </div>
+
+      <div class="field full">
+        <button type="submit">
+          Import viral reference
+        </button>
+      </div>
+    </form>
+  `;
+
+  q('#content').innerHTML =
+    hero(
+      'Discover YouTube popularity signals or import a YouTube or Instagram reference. The application generates a new post and does not copy unlicensed source footage.',
+      `<button data-act="trends">
+         Discover YouTube Trends
+       </button>`
+    ) +
+    card(
+      'Import YouTube or Instagram Reference',
+      importForm,
+      'full'
+    ) +
+    card(
+      'Ranked Opportunities',
+      table(
+        state.trends,
+        [
+          ['Rank', row => esc(row.rank || '–')],
+          ['Platform', 'platform'],
+          [
+            'Title',
+            row => `
+              <strong>
+                ${esc(row.title || row.caption || 'Untitled')}
+              </strong>
+              <br>
+              <small class="muted">
+                ${esc(row.source_label || row.data_source)}
+              </small>
+            `
+          ],
+          [
+            'Score',
+            row => `
+              <span class="tag">
+                ${Number(row.score || 0).toFixed(1)}
+              </span>
+            `
+          ],
+          [
+            'Confidence',
+            row => `
+              ${Math.round(
+                Number(row.score_confidence || 0) * 100
+              )}%
+            `
+          ],
+          [
+            'Action',
+            row => `
+              <button
+                class="secondary"
+                data-remix-trend="${esc(row.candidate_id)}"
+              >
+                Create New Post
+              </button>
+            `
+          ]
+        ]
+      ),
+      'full'
+    );
+
+  bindActions();
+
+  q('#trend-import-form').onsubmit = async event => {
+    event.preventDefault();
+
+    const form = new FormData(event.target);
+
+    const numericValue = name => {
+      const value = String(form.get(name) || '').trim();
+      return value ? Number(value) : null;
+    };
+
+    const payload = {
+      platform: form.get('platform'),
+      url: String(form.get('url') || '').trim(),
+      title: String(form.get('title') || '').trim() || null,
+      topic: String(form.get('topic') || '').trim() || null,
+      metrics: {
+        views: numericValue('views'),
+        likes: numericValue('likes'),
+        comments: numericValue('comments')
+      }
+    };
+
+    try {
+      await request('/trends/import', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      notify('Viral reference imported successfully.');
+      await trends();
+
+    } catch(error) {
+      notify(error.message, true);
+    }
+  };
+
+  document
+    .querySelectorAll('[data-remix-trend]')
+    .forEach(button => {
+      button.onclick = async () => {
+        button.disabled = true;
+        button.textContent = 'Creating...';
+
+        try {
+          const result = await request(
+            `/trends/${button.dataset.remixTrend}/remix`,
+            {method: 'POST'}
+          );
+
+          notify(
+            `New post package created: ${
+              result.title || result.package_id
+            }`
+          );
+
+          location.hash = 'ready';
+
+        } catch(error) {
+          notify(error.message, true);
+          button.disabled = false;
+          button.textContent = 'Create New Post';
+        }
+      };
+    });
+}
+
 async function detail(){setTitle('Trend Detail','EVIDENCE');const trends=await request('/trends');if(!trends.length){q('#content').innerHTML='<div class="empty">No trend is available. Run discovery first.</div>';return}const candidateId=trends[0].candidate_id;const [item,media]=await Promise.all([request(`/trends/${candidateId}`),request(`/trends/${candidateId}/source-media`)]);const rightsForm=`<form id="source-media-form" class="form-grid"><div class="field full"><label>Authorized source video</label><input type="file" name="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" required></div><div class="field"><label>Rights status</label><select name="rights_status"><option value="user_owned">I own this media</option><option value="licensed">Licensed</option><option value="explicit_permission">Explicit permission</option><option value="public_domain">Public domain</option></select></div><div class="field"><label>Rights owner</label><input name="rights_owner" required></div><div class="field full"><label>License or permission reference</label><input name="license_reference" placeholder="Required for licensed, permission, or public-domain media"></div><div class="field full"><label><input type="checkbox" name="allow_full_reuse" value="true" required> I confirm that the full clip may be reused and published</label></div><div class="field full"><button type="submit">Upload for voiceover-intro generation</button>${media.source_media?` <button type="button" class="danger" id="delete-source-media">Delete source media</button>`:''}</div></form>`;q('#content').innerHTML=`<div class="grid">${card('Source Observation',json(item.source_video),'half')}${card('Transparent Score',json(item.score),'half')}${card('Authorized Clip Remix',`${media.source_media?json(media.source_media):'<p class="muted">No authorized clip uploaded. The system will generate original media instead.</p>'}${rightsForm}`,'full')}${card('Model Interpretation',json(item.analysis||{status:'Run content generation to create an analysis.'}),'full')}</div>`;q('#source-media-form').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{await uploadRequest(`/trends/${candidateId}/source-media`,form);notify('Authorized source clip uploaded. Generate content to prepend a voiceover introduction.');await detail()}catch(err){notify(err.message,true)}};const del=q('#delete-source-media');if(del)del.onclick=async()=>{const value=prompt('Type DELETE to permanently remove the uploaded source clip.');if(value!=='DELETE')return;try{await request(`/trends/${candidateId}/source-media`,{method:'DELETE',body:JSON.stringify({confirmation:'DELETE'})});notify('Source media permanently deleted.');await detail()}catch(err){notify(err.message,true)}}}
 async function packagesPage(mode){const titles={concepts:'Content Concepts',studio:'Content Studio',preview:'Video Preview',review:'Review & Approval',ready:'Ready to Post',calendar:'Publishing Calendar',published:'Published Content'};setTitle(titles[mode],'CONTENT OPERATIONS');state.packages=await request('/content-packages');const filtered=mode==='published'?state.packages.filter(p=>p.status==='published'):mode==='ready'?state.packages.filter(p=>['ready_to_post','review','draft','approved'].includes(p.status)):state.packages;q('#content').innerHTML=hero('Inspect, download, or permanently delete packages. Permanent deletion removes all generated variants and cannot be undone.',`<button data-act="content">Generate Content</button>`)+card('Content Packages',table(filtered,[['Created',r=>esc((r.created_at||'').replace('T',' ').slice(0,19))],['ID',r=>`<code>${esc(String(r.id).slice(0,12))}</code>`],['Status',r=>`<span class="tag">${esc(r.status)}</span>`],['Storage',r=>fmtBytes(r.storage_bytes||0)],['Actions',r=>`<div class="action-row"><button class="secondary" data-package="${esc(r.id)}">Inspect</button><button class="danger" data-delete-package="${esc(r.id)}">Delete permanently</button></div>`]]),'full');bindActions();document.querySelectorAll('[data-package]').forEach(b=>b.onclick=()=>inspectPackage(b.dataset.package,mode));document.querySelectorAll('[data-delete-package]').forEach(b=>b.onclick=()=>permanentDeletePackage(b.dataset.deletePackage))}
-async function inspectPackage(id,mode){const p=await request(`/content-packages/${id}`);const variants=(p.variants||[]).map(v=>{const src=v.media_path?.replace(/^.*storage\//,'/files/');const thumb=v.thumbnail_path?.replace(/^.*storage\//,'/files/');return card(v.platform?.toUpperCase()||'Variant',`${src?`<video class="video" controls preload="metadata" poster="${esc(thumb||'')}" src="${esc(src)}"></video><div class="action-row"><a class="button" href="${esc(src)}" download>Download MP4</a></div>`:'<div class="empty">No rendered video is attached.</div>'}${json(v.metadata_json||{})}`,'full')}).join('');q('#content').innerHTML=hero(p.title,`<button class="danger" id="delete-current-package">Delete permanently</button>`)+variants+card('Package Metadata',json(p),'full');q('#delete-current-package').onclick=()=>permanentDeletePackage(id)}
+async function inspectPackage(id, mode){
+  const [packageData, accountGroups] = await Promise.all([
+    request(`/content-packages/${id}`),
+    request('/accounts')
+  ]);
+
+  const accountsByPlatform = Object.fromEntries(
+    accountGroups.map(group => [
+      group.platform,
+      (group.accounts || []).filter(
+        account =>
+          account.authorization_status === 'connected'
+      )
+    ])
+  );
+
+  const variantCards = (packageData.variants || [])
+    .map(variant => {
+      const source = variant.media_path
+        ? `/api/files?path=${
+            encodeURIComponent(variant.media_path)
+          }`
+        : '';
+
+      const thumbnail = variant.thumbnail_path
+        ? `/api/files?path=${
+            encodeURIComponent(variant.thumbnail_path)
+          }`
+        : '';
+
+      const accounts =
+        accountsByPlatform[variant.platform] || [];
+
+      const accountOptions = accounts.map(account => `
+        <option value="${esc(account.id)}">
+          ${esc(
+            account.display_name ||
+            account.external_account_id ||
+            account.id
+          )}
+        </option>
+      `).join('');
+
+      const controls = source
+        ? `
+          <div class="field">
+            <label>Destination account</label>
+            <select id="publish-account-${esc(variant.id)}">
+              <option value="">
+                Default connected account
+              </option>
+              ${accountOptions}
+            </select>
+          </div>
+
+          <div class="action-row">
+            <a
+              class="button secondary"
+              href="${esc(source)}"
+              download
+            >
+              Download MP4
+            </a>
+
+            <button
+              class="secondary"
+              data-publish-package="${esc(id)}"
+              data-publish-platform="${esc(variant.platform)}"
+              data-publish-variant="${esc(variant.id)}"
+              data-simulate="true"
+            >
+              Simulate
+            </button>
+
+            <button
+              data-publish-package="${esc(id)}"
+              data-publish-platform="${esc(variant.platform)}"
+              data-publish-variant="${esc(variant.id)}"
+              data-simulate="false"
+            >
+              Publish New Post
+            </button>
+          </div>
+        `
+        : `
+          <div class="empty">
+            No rendered media is attached.
+          </div>
+        `;
+
+      return card(
+        variant.platform?.toUpperCase() || 'Variant',
+        `
+          ${
+            source
+              ? `
+                <video
+                  class="video"
+                  controls
+                  preload="metadata"
+                  poster="${esc(thumbnail)}"
+                  src="${esc(source)}"
+                ></video>
+              `
+              : ''
+          }
+
+          ${controls}
+          ${json(variant.metadata_json || {})}
+        `,
+        'full'
+      );
+    })
+    .join('');
+
+  q('#content').innerHTML =
+    hero(
+      packageData.title,
+      `
+        <button
+          class="danger"
+          id="delete-current-package"
+        >
+          Delete permanently
+        </button>
+      `
+    ) +
+    variantCards +
+    card(
+      'Package Metadata',
+      json(packageData),
+      'full'
+    );
+
+  q('#delete-current-package').onclick = () =>
+    permanentDeletePackage(id);
+
+  document
+    .querySelectorAll('[data-publish-package]')
+    .forEach(button => {
+      button.onclick = async () => {
+        const simulate =
+          button.dataset.simulate === 'true';
+
+        const platform =
+          button.dataset.publishPlatform;
+
+        const variantId =
+          button.dataset.publishVariant;
+
+        const accountSelect = document.getElementById(
+          `publish-account-${variantId}`
+        );
+
+        const platformAccountId =
+          accountSelect?.value || null;
+
+        if(
+          !simulate &&
+          !confirm(
+            `Publish this newly generated post to ${platform}?`
+          )
+        ){
+          return;
+        }
+
+        button.disabled = true;
+
+        try {
+          await request(
+            `/content-packages/${
+              button.dataset.publishPackage
+            }/publish`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                platform,
+                platform_account_id:
+                  platformAccountId,
+                simulate
+              })
+            }
+          );
+
+          notify(
+            simulate
+              ? `${platform} publishing simulation completed.`
+              : `${platform} publication was submitted.`
+          );
+
+        } catch(error) {
+          notify(error.message, true);
+
+        } finally {
+          button.disabled = false;
+        }
+      };
+    });
+}
+
 async function permanentDeletePackage(id){const value=prompt('Type DELETE to permanently remove this package and all local media files. Published posts on social platforms will not be removed.');if(value!=='DELETE')return;try{const result=await request(`/content-packages/${id}/permanent`,{method:'DELETE',body:JSON.stringify({confirmation:'DELETE'})});notify(`Package deleted. ${fmtBytes(result.bytes_freed||0)} recovered.`);await packagesPage('ready')}catch(e){notify(e.message,true)}}
 async function analytics(){setTitle('Analytics','PERFORMANCE');const d=await request('/analytics/overview');q('#content').innerHTML=hero('Official metrics remain null when a platform does not expose them. Demonstration metrics are clearly labeled.',`<button data-act="analytics-demo">Load Demo Analytics</button>`)+`<div class="grid">${card('Account Metrics',json(d.account_metrics||[]),'half')}${card('Post Metrics',json(d.post_metrics||[]),'half')}${card('Normalized Performance',json(d.normalized||d),'full')}</div>`;bindActions()}
 async function experiments(){setTitle('Experiments','CONTROLLED OPTIMIZATION');const d=await request('/experiments');q('#content').innerHTML=hero('Experiments change versioned content configurations only. Production code and safety gates are never rewritten automatically.')+card('Experiment Registry',table(d,[['Name','name'],['Status','status'],['Hypothesis','hypothesis'],['Metric','target_metric'],['Decision','decision']]),'full')}

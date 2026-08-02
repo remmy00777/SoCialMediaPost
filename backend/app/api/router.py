@@ -327,6 +327,30 @@ def import_trend(payload: ImportVideoRequest, db: Session = Depends(get_db), _: 
     return {"candidate_id": candidate.id, "video_id": source.id, "score": score_result.model_dump()}
 
 
+@router.post(
+    "/trends/{candidate_id}/remix",
+    dependencies=[Depends(csrf_protected)],
+)
+def remix_trend_as_new_post(
+    candidate_id: str,
+    db: Session = Depends(get_db),
+    _: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    try:
+        package = WorkflowService(db).run_candidate_remix(candidate_id)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+    return {
+        "created": True,
+        "candidate_id": candidate_id,
+        "package_id": package.id,
+        "title": package.title,
+        "status": package.status,
+        "message": "A new cross-platform post package was created.",
+    }
+
+
 AUTHORIZED_SOURCE_RIGHTS = {"user_owned", "licensed", "public_domain", "explicit_permission"}
 ALLOWED_SOURCE_MIME_TYPES = {"video/mp4", "video/quicktime", "video/webm", "video/x-m4v"}
 ALLOWED_SOURCE_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}

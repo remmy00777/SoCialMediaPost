@@ -244,7 +244,23 @@ class PublicationService:
     @staticmethod
     def _platform_metadata(platform: str, account: PlatformAccount, metadata: dict[str, Any]) -> dict[str, Any]:
         if platform == "instagram":
-            metadata.setdefault("ig_user_id", account.external_account_id)
+            raw_profile = account.raw_profile or {}
+            instagram_profile = (
+                raw_profile.get("instagram_business_account")
+                or {}
+            )
+
+            metadata.setdefault(
+                "ig_user_id",
+                instagram_profile.get("id")
+                or account.external_account_id,
+            )
+
+            metadata.setdefault(
+                "page_id",
+                raw_profile.get("page_id")
+                or raw_profile.get("id"),
+            )
         if platform == "tiktok" and account.app_review_required:
             metadata["privacy_level"] = "SELF_ONLY"
         if platform == "youtube":

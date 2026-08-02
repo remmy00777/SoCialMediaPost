@@ -170,6 +170,100 @@ class WorkflowService:
             self.notifications.send_macos("Content ready", f"Generated {generated} cross-platform content packages.")
         return run
 
+    def run_candidate_remix(self, candidate_id: str) -> ContentPackage:
+        """Generate one new cross-platform package from one trend candidate."""
+
+        if self._is_paused():
+            raise RuntimeError("Global automation pause is active")
+
+        candidate = self.db.get(TrendCandidate, candidate_id)
+
+        if not candidate or candidate.deleted_at is not None:
+            raise RuntimeError("Trend candidate was not found")
+
+        run = self._start_run("content_remix")
+        run_id = run.id
+        self.db.commit()
+
+        run = self.db.get(WorkflowRun, run_id)
+
+        if not run:
+            raise RuntimeError("Remix workflow could not be initialized")
+
+        task = self._start_task(
+            run,
+            "generate_trend_remix",
+            candidate_id,
+        )
+        task_id = task.id
+        self.db.commit()
+
+        try:
+            package = self._generate_for_candidate(candidate, run)
+
+            task = self.db.get(TaskRun, task_id)
+
+            if task:
+                self._finish_task(
+                    task,
+                    "succeeded",
+                    {
+                        "content_package_id": package.id,
+                        "platform_variants": 3,
+                    },
+                )
+
+            run = self.db.get(WorkflowRun, run_id)
+
+            if run:
+                run.status = "succeeded"
+                run.finished_at = datetime.now(UTC)
+                run.summary = {
+                    "candidate_id": candidate_id,
+                    "content_package_id": package.id,
+                    "source_media_used": bool(
+                        package.generation_metadata.get(
+                            "source_media_used",
+                            False,
+                        )
+                    ),
+                }
+
+            record_audit(
+                self.db,
+                "trend.remixed_as_new_post",
+                resource_type="content_package",
+                resource_id=package.id,
+                correlation_id=run.correlation_id if run else None,
+                event_data={"candidate_id": candidate_id},
+            )
+
+            self.db.commit()
+            return package
+
+        except Exception as exc:
+            self.db.rollback()
+
+            task = self.db.get(TaskRun, task_id)
+
+            if task:
+                self._finish_task(
+                    task,
+                    "failed",
+                    error=str(exc),
+                )
+
+            run = self.db.get(WorkflowRun, run_id)
+
+            if run:
+                run.status = "failed"
+                run.finished_at = datetime.now(UTC)
+                run.error_message = str(exc)[:2000]
+
+            self.db.commit()
+            raise
+
+
     def _generate_for_candidate(self, candidate: TrendCandidate, run: WorkflowRun) -> ContentPackage:
         source = self.db.get(SourceVideo, candidate.source_video_id)
         if not source:

@@ -64,7 +64,51 @@ class InstagramAdapter(PlatformAdapter):
                 "code": code,
             },
         )
-        return response.json()
+
+        short_lived = response.json()
+        access_token = short_lived.get("access_token")
+
+        if not access_token:
+            return short_lived
+
+        try:
+            long_lived = self.http.request(
+                "GET",
+                f"{self.graph_base}/oauth/access_token",
+                params={
+                    "grant_type": "fb_exchange_token",
+                    "client_id": self.settings.meta_app_id,
+                    "client_secret": self.settings.meta_app_secret,
+                    "fb_exchange_token": access_token,
+                },
+            ).json()
+
+            return {**short_lived, **long_lived}
+
+        except Exception:
+            return short_lived
+
+    def _page_access_token(
+        self,
+        user_access_token: str,
+        page_id: str | None,
+    ) -> str:
+        if not page_id:
+            return user_access_token
+
+        response = self.http.request(
+            "GET",
+            f"{self.graph_base}/{page_id}",
+            params={
+                "fields": "access_token",
+                "access_token": user_access_token,
+            },
+        ).json()
+
+        return str(
+            response.get("access_token")
+            or user_access_token
+        )
 
     def disconnect_account(self, account_id: str) -> None:
         return None
@@ -185,6 +229,12 @@ class InstagramAdapter(PlatformAdapter):
         ig_user_id = metadata.get("ig_user_id")
         if not ig_user_id:
             raise PlatformAPIError("ig_user_id is required for Instagram publishing")
+
+        page_access_token = self._page_access_token(
+            access_token,
+            metadata.get("page_id"),
+        )
+
         container = self.http.request(
             "POST",
             f"{self.graph_base}/{ig_user_id}/media",
@@ -193,7 +243,7 @@ class InstagramAdapter(PlatformAdapter):
                 "upload_type": "resumable",
                 "caption": metadata.get("caption", "")[:2200],
                 "share_to_feed": str(bool(metadata.get("share_to_feed", True))).lower(),
-                "access_token": access_token,
+                "access_token": page_access_token,
             },
         ).json()
         container_id = container.get("id")
@@ -206,7 +256,7 @@ class InstagramAdapter(PlatformAdapter):
                 "POST",
                 upload_url,
                 headers={
-                    "Authorization": f"OAuth {access_token}",
+                    "Authorization": f"OAuth {page_access_token}",
                     "offset": "0",
                     "file_size": str(path.stat().st_size),
                     "Content-Type": "application/octet-stream",
@@ -219,10 +269,16 @@ class InstagramAdapter(PlatformAdapter):
         ig_user_id = metadata.get("ig_user_id")
         if not ig_user_id:
             raise PlatformAPIError("ig_user_id is required for Instagram publishing")
+
+        page_access_token = self._page_access_token(
+            access_token,
+            metadata.get("page_id"),
+        )
+
         response = self.http.request(
             "POST",
             f"{self.graph_base}/{ig_user_id}/media_publish",
-            data={"creation_id": upload_id, "access_token": access_token},
+            data={"creation_id": upload_id, "access_token": page_access_token},
         )
         return response.json()
 
