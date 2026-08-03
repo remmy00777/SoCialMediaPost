@@ -61,6 +61,8 @@ from app.models import (
 from app.platforms.registry import registry
 from app.schemas import (
     ApprovalRequest,
+    AuthorizedMediaCaptureRequest,
+    CreatorWatchRequest,
     BrandProfileRequest,
     ExperimentRequest,
     ImportVideoRequest,
@@ -71,6 +73,8 @@ from app.schemas import (
     ScheduleRequest,
 )
 from app.services.analytics import multi_objective_performance, normalized_post_metrics
+from app.services.authorized_media import AuthorizedMediaError, AuthorizedMediaService
+from app.services.creator_watch import CreatorWatchError, CreatorWatchService
 from app.services.audit import record_audit
 from app.services.experiments import deterministic_assignment
 from app.services.media_validation import probe_media
@@ -327,6 +331,112 @@ def import_trend(payload: ImportVideoRequest, db: Session = Depends(get_db), _: 
     return {"candidate_id": candidate.id, "video_id": source.id, "score": score_result.model_dump()}
 
 
+@router.get("/creator-watchlist")
+def list_creator_watchlist(
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(TrendSource)
+        .where(
+            TrendSource.source_type == "creator_watch",
+            TrendSource.deleted_at.is_(None),
+        )
+        .order_by(desc(TrendSource.created_at))
+    ).scalars().all()
+    result = []
+    for row in rows:
+        configuration = dict(row.configuration or {})
+        if user and configuration.get("user_id") not in {None, user.id}:
+            continue
+        configuration.pop("user_id", None)
+        result.append({**serialize_model(row), "configuration": configuration})
+    return result
+
+
+@router.post("/creator-watchlist", dependencies=[Depends(csrf_protected)])
+def create_creator_watch(
+    payload: CreatorWatchRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    if payload.auto_capture_and_prepare:
+        if not payload.allow_full_reuse:
+            raise HTTPException(422, "Automatic capture requires full-reuse authorization")
+        if not payload.authorized_media_url_template:
+            raise HTTPException(422, "Automatic capture requires an authorized media URL template")
+    if (
+        payload.rights_status in {"licensed", "public_domain", "explicit_permission"}
+        and not payload.license_reference
+    ):
+        raise HTTPException(422, "License, permission, or public-domain reference is required")
+
+    configuration = payload.model_dump(mode="json")
+    configuration["user_id"] = user.id if user else None
+    watch = TrendSource(
+        platform=payload.platform,
+        source_type="creator_watch",
+        label=payload.creator_name,
+        active=True,
+        limitations=(
+            "YouTube supports official upload polling. Instagram and TikTok require "
+            "creator authorization or a licensed media feed. Full media is acquired only "
+            "from an allowlisted authorized delivery host."
+        ),
+        configuration=configuration,
+    )
+    db.add(watch)
+    db.flush()
+    record_audit(
+        db,
+        "creator_watch.created",
+        resource_type="trend_source",
+        resource_id=watch.id,
+        actor_id=user.id if user else None,
+        event_data={
+            "platform": payload.platform,
+            "external_creator_id": payload.external_creator_id,
+            "auto_capture_and_prepare": payload.auto_capture_and_prepare,
+        },
+    )
+    db.commit()
+    return serialize_model(watch)
+
+
+@router.post("/creator-watchlist/{watch_id}/check", dependencies=[Depends(csrf_protected)])
+def check_creator_watch(
+    watch_id: str,
+    db: Session = Depends(get_db),
+    _: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    try:
+        return CreatorWatchService(db).check_watch(watch_id)
+    except CreatorWatchError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.delete("/creator-watchlist/{watch_id}", dependencies=[Depends(csrf_protected)])
+def disable_creator_watch(
+    watch_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, bool]:
+    watch = db.get(TrendSource, watch_id)
+    if not watch or watch.source_type != "creator_watch":
+        raise HTTPException(404, "Creator watch was not found")
+    watch.active = False
+    watch.deleted_at = datetime.now(UTC)
+    record_audit(
+        db,
+        "creator_watch.disabled",
+        resource_type="trend_source",
+        resource_id=watch.id,
+        actor_id=user.id if user else None,
+    )
+    db.commit()
+    return {"disabled": True}
+
+
 @router.post(
     "/trends/{candidate_id}/remix",
     dependencies=[Depends(csrf_protected)],
@@ -374,6 +484,35 @@ def get_source_media(
         .order_by(desc(SourceMediaAsset.created_at))
     ).scalars().first()
     return {"source_media": serialize_model(asset) if asset else None}
+
+
+@router.post(
+    "/trends/{candidate_id}/source-media/capture-url",
+    dependencies=[Depends(csrf_protected)],
+)
+def capture_source_media_url(
+    candidate_id: str,
+    payload: AuthorizedMediaCaptureRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    try:
+        asset = AuthorizedMediaService(db).capture_for_candidate(
+            candidate_id,
+            source_url=str(payload.source_url),
+            rights_status=payload.rights_status,
+            rights_owner=payload.rights_owner,
+            license_reference=payload.license_reference,
+            attribution_text=payload.attribution_text,
+            allow_full_reuse=payload.allow_full_reuse,
+            user_id=user.id if user else None,
+        )
+    except AuthorizedMediaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "source_media": serialize_model(asset),
+        "message": "Full authorized source captured and stored for manual-post generation",
+    }
 
 
 @router.post("/trends/{candidate_id}/source-media", dependencies=[Depends(csrf_protected)])

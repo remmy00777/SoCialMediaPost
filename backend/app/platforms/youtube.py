@@ -132,6 +132,74 @@ class YouTubeAdapter(PlatformAdapter):
         )
         return [self._normalize(item, source="youtube_most_popular_chart") for item in response.json().get("items", [])]
 
+    def list_creator_uploads(
+        self,
+        channel_id: str,
+        limit: int = 5,
+    ) -> list[NormalizedVideo]:
+        if not self.settings.youtube_api_key:
+            raise PlatformAPIError("YouTube API key is required for creator monitoring")
+
+        channel_response = self.http.request(
+            "GET",
+            f"{self.api_base}/channels",
+            params={
+                "part": "snippet,statistics,contentDetails",
+                "id": channel_id,
+                "key": self.settings.youtube_api_key,
+            },
+        ).json()
+        channels = channel_response.get("items", [])
+        if not channels:
+            raise PlatformAPIError("YouTube creator channel was not found")
+
+        uploads_playlist = (
+            channels[0]
+            .get("contentDetails", {})
+            .get("relatedPlaylists", {})
+            .get("uploads")
+        )
+        if not uploads_playlist:
+            raise PlatformAPIError("YouTube uploads playlist was not available")
+
+        playlist_response = self.http.request(
+            "GET",
+            f"{self.api_base}/playlistItems",
+            params={
+                "part": "contentDetails,snippet",
+                "playlistId": uploads_playlist,
+                "maxResults": min(max(limit, 1), 50),
+                "key": self.settings.youtube_api_key,
+            },
+        ).json()
+        video_ids = [
+            item.get("contentDetails", {}).get("videoId")
+            for item in playlist_response.get("items", [])
+        ]
+        video_ids = [item for item in video_ids if item]
+        if not video_ids:
+            return []
+
+        video_response = self.http.request(
+            "GET",
+            f"{self.api_base}/videos",
+            params={
+                "part": "snippet,statistics,contentDetails",
+                "id": ",".join(video_ids),
+                "key": self.settings.youtube_api_key,
+            },
+        ).json()
+        by_id = {
+            str(item.get("id")): item
+            for item in video_response.get("items", [])
+        }
+        return [
+            self._normalize(by_id[video_id], source="youtube_creator_watch")
+            for video_id in video_ids
+            if video_id in by_id
+        ]
+
+
     def import_video_reference(self, url: str) -> NormalizedVideo:
         video_id = parse_youtube_id(url)
         if self.settings.youtube_api_key:

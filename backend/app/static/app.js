@@ -1,7 +1,7 @@
 const api = '/api';
 const pages = [
   ['Core','dashboard','◫','Dashboard'],['Core','onboarding','◎','Onboarding'],['Core','accounts','⌁','Connected Accounts'],
-  ['Intelligence','trends','↗','Trend Explorer'],['Intelligence','trend-detail','◉','Trend Detail'],['Intelligence','concepts','✦','Content Concepts'],
+  ['Intelligence','trends','↗','Trend Explorer'],['Intelligence','creator-watch','◌','Creator Watchlist'],['Intelligence','trend-detail','◉','Trend Detail'],['Intelligence','concepts','✦','Content Concepts'],
   ['Production','studio','▣','Content Studio'],['Production','preview','▶','Video Preview'],['Production','review','✓','Review & Approval'],['Production','ready','⇩','Ready to Post'],
   ['Publishing','calendar','◷','Publishing Calendar'],['Publishing','published','●','Published Content'],
   ['Learning','analytics','⌁','Analytics'],['Learning','comparison','⇄','Cross-platform'],['Learning','experiments','⚗','Experiments'],
@@ -181,6 +181,144 @@ async function accounts(){
         );
         notify('Account disconnected.');
         await accounts();
+      } catch(error) {
+        notify(error.message, true);
+      }
+    };
+  });
+}
+
+async function creatorWatch(){
+  setTitle('Creator Watchlist','AUTHORIZED MONITORING');
+  const watches = await request('/creator-watchlist');
+
+  const form = `
+    <form id="creator-watch-form" class="form-grid">
+      <div class="field">
+        <label>Platform</label>
+        <select name="platform">
+          <option value="youtube">YouTube</option>
+          <option value="instagram">Instagram</option>
+          <option value="tiktok">TikTok</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Creator name</label>
+        <input name="creator_name" required>
+      </div>
+      <div class="field full">
+        <label>External creator ID</label>
+        <input name="external_creator_id" placeholder="YouTube channel ID, Instagram professional ID, or TikTok Open ID" required>
+      </div>
+      <div class="field full">
+        <label>Creator profile URL</label>
+        <input name="profile_url" type="url">
+      </div>
+      <div class="field">
+        <label>Rights status</label>
+        <select name="rights_status">
+          <option value="licensed">Licensed</option>
+          <option value="explicit_permission">Explicit permission</option>
+          <option value="user_owned">User owned</option>
+          <option value="public_domain">Public domain</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Rights owner</label>
+        <input name="rights_owner" required>
+      </div>
+      <div class="field full">
+        <label>License or permission reference</label>
+        <input name="license_reference" required>
+      </div>
+      <div class="field full">
+        <label>Attribution text</label>
+        <input name="attribution_text" placeholder="Original creator: @creatorname">
+      </div>
+      <div class="field full">
+        <label>Authorized media URL template</label>
+        <input name="authorized_media_url_template" placeholder="https://media.example.com/{external_video_id}.mp4">
+        <small class="muted">The host must be listed in AUTHORIZED_MEDIA_HOSTS. Platform URLs and platform CDNs are rejected.</small>
+      </div>
+      <div class="field full">
+        <label><input type="checkbox" name="allow_full_reuse"> Full reuse and editing are authorized</label>
+      </div>
+      <div class="field full">
+        <label><input type="checkbox" name="auto_capture_and_prepare"> Automatically capture authorized source and create manual ready-to-post packages</label>
+      </div>
+      <div class="field full">
+        <button type="submit">Add creator watch</button>
+      </div>
+    </form>
+  `;
+
+  const rows = watches.map(watch => ({
+    ...watch,
+    creator: watch.label,
+    creator_id: watch.configuration?.external_creator_id,
+    last_check: watch.configuration?.last_checked_at || 'Never',
+    automatic: watch.configuration?.auto_capture_and_prepare ? 'Yes' : 'No'
+  }));
+
+  q('#content').innerHTML =
+    hero('Track creator uploads through official metadata APIs. Full media is accepted only from an allowlisted creator, licensor, or approved delivery host. Generated packages remain manual-post only.') +
+    card('Add Authorized Creator', form, 'full') +
+    card('Watched Creators', table(rows, [
+      ['Platform','platform'],
+      ['Creator','creator'],
+      ['Creator ID','creator_id'],
+      ['Auto prepare','automatic'],
+      ['Last check','last_check'],
+      ['Action', row => `<div class="action-row"><button class="secondary" data-check-watch="${esc(row.id)}">Check now</button><button class="danger" data-disable-watch="${esc(row.id)}">Disable</button></div>`]
+    ]), 'full');
+
+  q('#creator-watch-form').onsubmit = async event => {
+    event.preventDefault();
+    const data = new FormData(event.target);
+    const payload = {
+      platform: data.get('platform'),
+      creator_name: String(data.get('creator_name') || '').trim(),
+      external_creator_id: String(data.get('external_creator_id') || '').trim(),
+      profile_url: String(data.get('profile_url') || '').trim() || null,
+      rights_status: data.get('rights_status'),
+      rights_owner: String(data.get('rights_owner') || '').trim(),
+      license_reference: String(data.get('license_reference') || '').trim() || null,
+      attribution_text: String(data.get('attribution_text') || '').trim() || null,
+      allow_full_reuse: data.get('allow_full_reuse') === 'on',
+      authorized_media_url_template: String(data.get('authorized_media_url_template') || '').trim() || null,
+      auto_capture_and_prepare: data.get('auto_capture_and_prepare') === 'on'
+    };
+    try {
+      await request('/creator-watchlist', {method:'POST', body:JSON.stringify(payload)});
+      notify('Creator watch added.');
+      await creatorWatch();
+    } catch(error) {
+      notify(error.message, true);
+    }
+  };
+
+  document.querySelectorAll('[data-check-watch]').forEach(button => {
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const result = await request(`/creator-watchlist/${button.dataset.checkWatch}/check`, {method:'POST'});
+        notify(`Creator check completed. ${result.new_candidates?.length || 0} new post(s), ${result.prepared_packages?.length || 0} package(s) prepared.`);
+        await creatorWatch();
+      } catch(error) {
+        notify(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    };
+  });
+
+  document.querySelectorAll('[data-disable-watch]').forEach(button => {
+    button.onclick = async () => {
+      if(!confirm('Disable this creator watch?')) return;
+      try {
+        await request(`/creator-watchlist/${button.dataset.disableWatch}`, {method:'DELETE'});
+        notify('Creator watch disabled.');
+        await creatorWatch();
       } catch(error) {
         notify(error.message, true);
       }
@@ -377,7 +515,144 @@ async function trends(){
     });
 }
 
-async function detail(){setTitle('Trend Detail','EVIDENCE');const trends=await request('/trends');if(!trends.length){q('#content').innerHTML='<div class="empty">No trend is available. Run discovery first.</div>';return}const candidateId=trends[0].candidate_id;const [item,media]=await Promise.all([request(`/trends/${candidateId}`),request(`/trends/${candidateId}/source-media`)]);const rightsForm=`<form id="source-media-form" class="form-grid"><div class="field full"><label>Authorized source video</label><input type="file" name="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" required></div><div class="field"><label>Rights status</label><select name="rights_status"><option value="user_owned">I own this media</option><option value="licensed">Licensed</option><option value="explicit_permission">Explicit permission</option><option value="public_domain">Public domain</option></select></div><div class="field"><label>Rights owner</label><input name="rights_owner" required></div><div class="field full"><label>License or permission reference</label><input name="license_reference" placeholder="Required for licensed, permission, or public-domain media"></div><div class="field full"><label><input type="checkbox" name="allow_full_reuse" value="true" required> I confirm that the full clip may be reused and published</label></div><div class="field full"><button type="submit">Upload for voiceover-intro generation</button>${media.source_media?` <button type="button" class="danger" id="delete-source-media">Delete source media</button>`:''}</div></form>`;q('#content').innerHTML=`<div class="grid">${card('Source Observation',json(item.source_video),'half')}${card('Transparent Score',json(item.score),'half')}${card('Authorized Clip Remix',`${media.source_media?json(media.source_media):'<p class="muted">No authorized clip uploaded. The system will generate original media instead.</p>'}${rightsForm}`,'full')}${card('Model Interpretation',json(item.analysis||{status:'Run content generation to create an analysis.'}),'full')}</div>`;q('#source-media-form').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{await uploadRequest(`/trends/${candidateId}/source-media`,form);notify('Authorized source clip uploaded. Generate content to prepend a voiceover introduction.');await detail()}catch(err){notify(err.message,true)}};const del=q('#delete-source-media');if(del)del.onclick=async()=>{const value=prompt('Type DELETE to permanently remove the uploaded source clip.');if(value!=='DELETE')return;try{await request(`/trends/${candidateId}/source-media`,{method:'DELETE',body:JSON.stringify({confirmation:'DELETE'})});notify('Source media permanently deleted.');await detail()}catch(err){notify(err.message,true)}}}
+async function detail(){
+  setTitle('Trend Detail','EVIDENCE AND AUTHORIZED MEDIA');
+  const trends = await request('/trends');
+  if(!trends.length){
+    q('#content').innerHTML = '<div class="empty">No trend is available. Run discovery or check a creator watch first.</div>';
+    return;
+  }
+
+  const candidateId = trends[0].candidate_id;
+  const [item, media] = await Promise.all([
+    request(`/trends/${candidateId}`),
+    request(`/trends/${candidateId}/source-media`)
+  ]);
+
+  const commonRights = `
+    <div class="field">
+      <label>Rights status</label>
+      <select name="rights_status">
+        <option value="licensed">Licensed</option>
+        <option value="explicit_permission">Explicit permission</option>
+        <option value="user_owned">User owned</option>
+        <option value="public_domain">Public domain</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Rights owner</label>
+      <input name="rights_owner" required>
+    </div>
+    <div class="field full">
+      <label>License or permission reference</label>
+      <input name="license_reference" required>
+    </div>
+    <div class="field full">
+      <label>Attribution text</label>
+      <input name="attribution_text" placeholder="Original creator: @creatorname">
+    </div>
+    <div class="field full">
+      <label><input type="checkbox" name="allow_full_reuse" value="true" required> I confirm that full reuse, editing, and reposting are authorized</label>
+    </div>
+  `;
+
+  const uploadForm = `
+    <form id="source-media-form" class="form-grid">
+      <div class="field full">
+        <label>Authorized source video file</label>
+        <input type="file" name="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" required>
+      </div>
+      ${commonRights}
+      <div class="field full"><button type="submit">Upload complete authorized video</button></div>
+    </form>
+  `;
+
+  const captureForm = `
+    <form id="source-url-form" class="form-grid">
+      <div class="field full">
+        <label>Authorized delivery URL</label>
+        <input type="url" name="source_url" placeholder="https://media.example.com/video.mp4" required>
+        <small class="muted">Only an exact host listed in AUTHORIZED_MEDIA_HOSTS is accepted. YouTube, Instagram, TikTok, and platform CDN URLs are rejected.</small>
+      </div>
+      ${commonRights}
+      <div class="field full"><button type="submit">Capture complete authorized video</button></div>
+    </form>
+  `;
+
+  const currentMedia = media.source_media
+    ? `${json(media.source_media)}<div class="action-row"><button data-remix-current="${esc(candidateId)}">Create manual ready-to-post package</button><button type="button" class="danger" id="delete-source-media">Delete source media</button></div>`
+    : '<p class="muted">No authorized full source is stored. Upload a file or use an allowlisted creator-delivery URL.</p>';
+
+  q('#content').innerHTML = `<div class="grid">
+    ${card('Source Observation', json(item.video || {}), 'half')}
+    ${card('Transparent Score', json(item.score || {}), 'half')}
+    ${card('Current Authorized Source', currentMedia, 'full')}
+    ${card('Upload Authorized File', uploadForm, 'full')}
+    ${card('Capture from Authorized Delivery Host', captureForm, 'full')}
+    ${card('Model Interpretation', json(item.analysis || {status:'Generate content to create an analysis.'}), 'full')}
+  </div>`;
+
+  q('#source-media-form').onsubmit = async event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    try {
+      await uploadRequest(`/trends/${candidateId}/source-media`, form);
+      notify('Complete authorized source uploaded.');
+      await detail();
+    } catch(error) {
+      notify(error.message, true);
+    }
+  };
+
+  q('#source-url-form').onsubmit = async event => {
+    event.preventDefault();
+    const data = new FormData(event.target);
+    const payload = {
+      source_url: String(data.get('source_url') || '').trim(),
+      rights_status: data.get('rights_status'),
+      rights_owner: String(data.get('rights_owner') || '').trim(),
+      license_reference: String(data.get('license_reference') || '').trim() || null,
+      attribution_text: String(data.get('attribution_text') || '').trim() || null,
+      allow_full_reuse: data.get('allow_full_reuse') === 'true'
+    };
+    try {
+      await request(`/trends/${candidateId}/source-media/capture-url`, {method:'POST', body:JSON.stringify(payload)});
+      notify('Complete authorized source captured.');
+      await detail();
+    } catch(error) {
+      notify(error.message, true);
+    }
+  };
+
+  document.querySelectorAll('[data-remix-current]').forEach(button => {
+    button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const result = await request(`/trends/${button.dataset.remixCurrent}/remix`, {method:'POST'});
+        notify(`Manual ready-to-post package created: ${result.title || result.package_id}`);
+        location.hash = 'ready';
+      } catch(error) {
+        notify(error.message, true);
+        button.disabled = false;
+      }
+    };
+  });
+
+  const remove = q('#delete-source-media');
+  if(remove){
+    remove.onclick = async () => {
+      if(prompt('Type DELETE to permanently remove the source video.') !== 'DELETE') return;
+      try {
+        await request(`/trends/${candidateId}/source-media`, {method:'DELETE', body:JSON.stringify({confirmation:'DELETE'})});
+        notify('Authorized source deleted.');
+        await detail();
+      } catch(error) {
+        notify(error.message, true);
+      }
+    };
+  }
+}
+
 async function packagesPage(mode){const titles={concepts:'Content Concepts',studio:'Content Studio',preview:'Video Preview',review:'Review & Approval',ready:'Ready to Post',calendar:'Publishing Calendar',published:'Published Content'};setTitle(titles[mode],'CONTENT OPERATIONS');state.packages=await request('/content-packages');const filtered=mode==='published'?state.packages.filter(p=>p.status==='published'):mode==='ready'?state.packages.filter(p=>['ready_to_post','review','draft','approved'].includes(p.status)):state.packages;q('#content').innerHTML=hero('Inspect, download, or permanently delete packages. Permanent deletion removes all generated variants and cannot be undone.',`<button data-act="content">Generate Content</button>`)+card('Content Packages',table(filtered,[['Created',r=>esc((r.created_at||'').replace('T',' ').slice(0,19))],['ID',r=>`<code>${esc(String(r.id).slice(0,12))}</code>`],['Status',r=>`<span class="tag">${esc(r.status)}</span>`],['Storage',r=>fmtBytes(r.storage_bytes||0)],['Actions',r=>`<div class="action-row"><button class="secondary" data-package="${esc(r.id)}">Inspect</button><button class="danger" data-delete-package="${esc(r.id)}">Delete permanently</button></div>`]]),'full');bindActions();document.querySelectorAll('[data-package]').forEach(b=>b.onclick=()=>inspectPackage(b.dataset.package,mode));document.querySelectorAll('[data-delete-package]').forEach(b=>b.onclick=()=>permanentDeletePackage(b.dataset.deletePackage))}
 async function inspectPackage(id, mode){
   const [packageData, accountGroups] = await Promise.all([
@@ -589,7 +864,7 @@ async function health(){setTitle('API Health','READINESS');const [live,ready,sec
 async function simplePage(id,title,path){setTitle(title,'OPERATIONS');const d=await request(path);q('#content').innerHTML=card(title,Array.isArray(d)?table(d,[['Timestamp',r=>esc(r.created_at||r.occurred_at||'')],['Type',r=>esc(r.event_type||r.level||r.title||'')],['Status',r=>esc(r.status||r.severity||'')],['Detail',r=>esc(r.message||r.action||JSON.stringify(r).slice(0,160))]]):json(d),'full')}
 async function backup(){setTitle('Backup & Restore','DATA PROTECTION');q('#content').innerHTML=hero('Create an encrypted archive of the database, configuration metadata, and managed storage. Restore requires an explicit local command.',`<button data-act="backup">Create Backup</button>`)+card('Backup Policy','<p class="muted">Backups are written under <code>storage/exports/backups</code>. Use <code>scripts/restore.sh</code> for an explicit restore.</p>','full');bindActions()}
 async function generic(title,text){setTitle(title,'CONFIGURATION');q('#content').innerHTML=card(title,`<p class="muted">${esc(text)}</p>`,'full')}
-async function route(){state.page=(location.hash||'#dashboard').slice(1);nav();try{const map={dashboard,onboarding,accounts,trends,'trend-detail':detail,concepts:()=>packagesPage('concepts'),studio:()=>packagesPage('studio'),preview:()=>packagesPage('preview'),review:()=>packagesPage('review'),ready:()=>packagesPage('ready'),calendar:()=>packagesPage('calendar'),published:()=>packagesPage('published'),analytics,comparison:analytics,experiments,brand,rules:()=>generic('Content Rules','Manage included and excluded topics, disclosure rules, rights requirements, brand-safety thresholds, and publishing gates through the brand profile and environment configuration.'),schedules,providers,health,jobs:()=>simplePage('jobs','Job History','/workflows'),logs:()=>simplePage('logs','Logs','/audit-events'),notifications:()=>simplePage('notifications','Notifications','/notifications'),security:health,backup,settings:()=>generic('Settings','Runtime configuration is validated from .env. Use the documented environment keys and restart the local stack after changes.')};await (map[state.page]||dashboard)()}catch(e){if(String(e.message).includes('Authentication'))return showAuth();q('#content').innerHTML=`<div class="empty danger-text">${esc(e.message)}</div>`}}
+async function route(){state.page=(location.hash||'#dashboard').slice(1);nav();try{const map={dashboard,onboarding,accounts,'creator-watch':creatorWatch,trends,'trend-detail':detail,concepts:()=>packagesPage('concepts'),studio:()=>packagesPage('studio'),preview:()=>packagesPage('preview'),review:()=>packagesPage('review'),ready:()=>packagesPage('ready'),calendar:()=>packagesPage('calendar'),published:()=>packagesPage('published'),analytics,comparison:analytics,experiments,brand,rules:()=>generic('Content Rules','Manage included and excluded topics, disclosure rules, rights requirements, brand-safety thresholds, and publishing gates through the brand profile and environment configuration.'),schedules,providers,health,jobs:()=>simplePage('jobs','Job History','/workflows'),logs:()=>simplePage('logs','Logs','/audit-events'),notifications:()=>simplePage('notifications','Notifications','/notifications'),security:health,backup,settings:()=>generic('Settings','Runtime configuration is validated from .env. Use the documented environment keys and restart the local stack after changes.')};await (map[state.page]||dashboard)()}catch(e){if(String(e.message).includes('Authentication'))return showAuth();q('#content').innerHTML=`<div class="empty danger-text">${esc(e.message)}</div>`}}
 function bindActions(){document.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{const a=b.dataset.act;if(a==='demo')await request('/workflows/demo',{method:'POST'});if(a==='trends')await request('/workflows/trends?max_candidates=10&select_limit=10',{method:'POST'});if(a==='content')await request('/workflows/content?max_items=10',{method:'POST'});if(a==='analytics-demo')await request('/analytics/demo',{method:'POST'});if(a==='backup')await request('/backup',{method:'POST'});notify(`${a.replace('-',' ')} completed.`);await route()}catch(e){notify(e.message,true)}finally{b.disabled=false}})}
 function showAuth(){q('#app').classList.add('hidden');q('#auth-screen').classList.remove('hidden')}
 function showApp(){q('#auth-screen').classList.add('hidden');q('#app').classList.remove('hidden');route()}

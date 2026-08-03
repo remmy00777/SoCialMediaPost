@@ -152,13 +152,19 @@ class LocalTemplateProvider:
         seed = int(hashlib.sha256(topic.encode()).hexdigest()[:8], 16)
 
         if reusable_source:
+            validation = source_media.get("media_validation") or {}
+            attribution = (
+                validation.get("attribution_text")
+                or f"Original creator: {source.get('creator_name') or source_media.get('rights_owner')}"
+            )
             intro = (
-                f"Before you watch this authorized clip about {topic}, focus on the opening, pacing, "
-                "and the specific reason it holds attention."
+                f"{attribution}. Before you watch this authorized clip about {topic}, "
+                "focus on the opening, pacing, and the specific reason it holds attention."
             )
             caption = (
-                f"Authorized source clip with an original voiceover introduction about {topic}. "
-                "The source media is used only under the recorded ownership or license declaration."
+                f"{attribution}. Authorized full-source repost with an original voiceover introduction "
+                f"about {topic}. Reuse is based on the recorded ownership, license, public-domain, "
+                "or permission declaration."
             )
             return {
                 "title": f"What Makes This {topic.title()} Clip Work",
@@ -191,6 +197,8 @@ class LocalTemplateProvider:
                     "provider_version": self.version,
                     "source_media_used": True,
                     "source_rights_status": source_media.get("rights_status"),
+                    "source_attribution": attribution,
+                    "manual_post_only": True,
                     "paid_api_calls": 0,
                     "seed": seed,
                 },

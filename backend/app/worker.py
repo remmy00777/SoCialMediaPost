@@ -6,6 +6,7 @@ from celery.schedules import crontab
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.services.workflow import WorkflowService
+from app.services.creator_watch import CreatorWatchService
 from app.services.publication import PublicationService
 from app.services.scheduler import SchedulerService
 
@@ -37,8 +38,24 @@ def cron_from_expression(expression: str) -> crontab:
 celery_app.conf.beat_schedule = {
     "database-schedule-tick": {"task": "app.worker.schedule_tick", "schedule": crontab(minute="*")},
     "due-publications": {"task": "app.worker.publish_due_jobs", "schedule": crontab(minute="*/5")},
+    "creator-watch-poll": {
+        "task": "app.worker.creator_watch_poll",
+        "schedule": crontab(minute=f"*/{max(1, settings.creator_watch_poll_minutes)}"),
+    },
 }
 
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(ConnectionError,),
+    retry_backoff=True,
+    retry_jitter=True,
+    max_retries=5,
+)
+def creator_watch_poll(self):
+    with SessionLocal() as db:
+        return CreatorWatchService(db).check_all()
 
 
 @celery_app.task(bind=True, autoretry_for=(ConnectionError,), retry_backoff=True, retry_jitter=True, max_retries=5)

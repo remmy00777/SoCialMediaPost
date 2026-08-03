@@ -120,6 +120,57 @@ class PublishRequest(BaseModel):
     simulate: bool = True
 
 
+class AuthorizedMediaCaptureRequest(BaseModel):
+    source_url: HttpUrl
+    rights_status: Literal[
+        "user_owned",
+        "licensed",
+        "public_domain",
+        "explicit_permission",
+    ]
+    rights_owner: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+    license_reference: str | None = None
+    attribution_text: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+    allow_full_reuse: bool = False
+
+
+class CreatorWatchRequest(BaseModel):
+    platform: Platform
+    creator_name: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+    external_creator_id: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+    profile_url: HttpUrl | None = None
+    rights_status: Literal[
+        "user_owned",
+        "licensed",
+        "public_domain",
+        "explicit_permission",
+    ]
+    rights_owner: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+    license_reference: str | None = None
+    attribution_text: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+    allow_full_reuse: bool = False
+    authorized_media_url_template: str | None = None
+    auto_capture_and_prepare: bool = False
+
+
 class PermanentDeleteRequest(BaseModel):
     confirmation: Literal["DELETE"]
 

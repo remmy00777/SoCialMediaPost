@@ -418,6 +418,8 @@ class WorkflowService:
     def _queue_auto_publications(
         self, package: ContentPackage, per_platform_queued: dict[str, int]
     ) -> int:
+        if package.generation_metadata.get("manual_post_only"):
+            return 0
         if (
             self.settings.approval_mode != "controlled_auto"
             or not self.settings.auto_publish_enabled

@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     storage_root: Path = Path("./storage")
     source_media_max_bytes: int = 524_288_000
     source_media_max_duration_seconds: int = 180
+    authorized_media_hosts: str = ""
+    creator_watch_poll_minutes: int = 5
     encryption_key: str | None = None
     keychain_service: str = "com.rcegai.socialmediapost"
 
@@ -129,6 +131,14 @@ class Settings(BaseSettings):
         if len(value) < 32:
             raise ValueError("SESSION_SECRET must be at least 32 characters")
         return value
+
+    @property
+    def authorized_media_host_set(self) -> set[str]:
+        return {
+            item.strip().lower().rstrip(".")
+            for item in self.authorized_media_hosts.split(",")
+            if item.strip()
+        }
 
     @property
     def analytics_intervals(self) -> list[int]:
