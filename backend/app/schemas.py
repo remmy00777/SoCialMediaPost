@@ -120,6 +120,16 @@ class PublishRequest(BaseModel):
     simulate: bool = True
 
 
+class CreatorDiscoveryRequest(BaseModel):
+    platform: Literal["youtube", "instagram", "both"] = "both"
+    query: str | None = Field(default=None, max_length=200)
+    hashtags: list[str] = Field(default_factory=list, max_length=10)
+    instagram_usernames: list[str] = Field(default_factory=list, max_length=200)
+    top_n: int = Field(default=100, ge=1, le=100)
+    recent_posts_per_creator: int = Field(default=10, ge=1, le=10)
+    import_latest_as_trends: bool = True
+
+
 class AuthorizedMediaCaptureRequest(BaseModel):
     source_url: HttpUrl
     rights_status: Literal[

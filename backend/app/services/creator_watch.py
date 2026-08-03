@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.models import TrendCandidate, TrendScore, TrendSource
+from app.schemas import NormalizedVideo
 from app.platforms.registry import registry
 from app.services.authorized_media import AuthorizedMediaService
+from app.services.creator_discovery import CreatorDiscoveryService
 from app.services.workflow import WorkflowService
 
 
@@ -31,7 +33,28 @@ class CreatorWatchService:
 
         configuration = dict(watch.configuration or {})
         platform = watch.platform
-        if platform != "youtube":
+        creator_id = str(configuration.get("external_creator_id") or "").strip()
+        if not creator_id:
+            raise CreatorWatchError("Creator identifier is required")
+
+        if platform == "youtube":
+            uploads = registry.get("youtube").list_creator_uploads(
+                creator_id,
+                limit=5,
+            )
+        elif platform == "instagram":
+            creator = CreatorDiscoveryService(
+                self.db,
+                self.settings,
+            ).discover_single_instagram_creator(
+                creator_id,
+                recent_posts=5,
+            )
+            uploads = [
+                NormalizedVideo.model_validate(item)
+                for item in creator.get("recent_posts", [])
+            ]
+        else:
             configuration["last_checked_at"] = datetime.now(UTC).isoformat()
             configuration["last_check_status"] = (
                 "requires_authorized_creator_connection_or_licensed_feed"
@@ -45,12 +68,6 @@ class CreatorWatchService:
                 "new_candidates": [],
                 "prepared_packages": [],
             }
-
-        creator_id = str(configuration.get("external_creator_id") or "").strip()
-        if not creator_id:
-            raise CreatorWatchError("YouTube channel ID is required")
-
-        uploads = registry.get("youtube").list_creator_uploads(creator_id, limit=5)
         workflow = WorkflowService(self.db, self.settings)
         capture = AuthorizedMediaService(self.db, self.settings)
         new_candidates: list[str] = []

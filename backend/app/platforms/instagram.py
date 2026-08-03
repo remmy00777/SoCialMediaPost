@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,238 @@ class InstagramAdapter(PlatformAdapter):
                 "business_management",
             ],
         }
+
+    def discover_creators(
+        self,
+        *,
+        ig_user_id: str,
+        access_token: str,
+        hashtags: list[str] | None = None,
+        usernames: list[str] | None = None,
+        max_creators: int = 100,
+        recent_posts_per_creator: int = 10,
+    ) -> list[dict[str, Any]]:
+        requested = min(max(max_creators, 1), 100)
+        candidate_limit = min(max(requested * 2, requested), 200)
+        ordered_usernames: list[str] = []
+
+        def add_username(value: str | None) -> None:
+            normalized = (value or "").strip().lstrip("@").lower()
+            if (
+                normalized
+                and re.fullmatch(r"[a-z0-9._]+", normalized)
+                and normalized not in ordered_usernames
+            ):
+                ordered_usernames.append(normalized)
+
+        for value in usernames or []:
+            add_username(value)
+
+        for hashtag in hashtags or []:
+            cleaned = hashtag.strip().lstrip("#")
+            if not cleaned:
+                continue
+            search = self.http.request(
+                "GET",
+                f"{self.graph_base}/ig_hashtag_search",
+                params={
+                    "user_id": ig_user_id,
+                    "q": cleaned,
+                    "access_token": access_token,
+                },
+            ).json()
+            hashtag_ids = [
+                str(item.get("id"))
+                for item in search.get("data", [])
+                if item.get("id")
+            ]
+            for hashtag_id in hashtag_ids[:1]:
+                for edge in ("top_media", "recent_media"):
+                    try:
+                        media_payload = self.http.request(
+                            "GET",
+                            f"{self.graph_base}/{hashtag_id}/{edge}",
+                            params={
+                                "user_id": ig_user_id,
+                                "fields": (
+                                    "id,caption,comments_count,like_count,media_type,"
+                                    "media_product_type,permalink,timestamp,username,"
+                                    "thumbnail_url"
+                                ),
+                                "limit": 50,
+                                "access_token": access_token,
+                            },
+                        ).json()
+                    except PlatformAPIError:
+                        continue
+                    for media in media_payload.get("data", []):
+                        add_username(media.get("username"))
+                        if len(ordered_usernames) >= candidate_limit:
+                            break
+                    if len(ordered_usernames) >= candidate_limit:
+                        break
+            if len(ordered_usernames) >= candidate_limit:
+                break
+
+        creators: list[dict[str, Any]] = []
+        post_limit = min(max(recent_posts_per_creator, 1), 10)
+        for username in ordered_usernames[:candidate_limit]:
+            fields = (
+                "business_discovery.username(" + username + "){"
+                "id,username,name,biography,followers_count,follows_count,"
+                "media_count,profile_picture_url,"
+                f"media.limit({post_limit})"
+                "{id,caption,comments_count,like_count,media_type,"
+                "media_product_type,permalink,timestamp,thumbnail_url}"
+                "}"
+            )
+            try:
+                payload = self.http.request(
+                    "GET",
+                    f"{self.graph_base}/{ig_user_id}",
+                    params={
+                        "fields": fields,
+                        "access_token": access_token,
+                    },
+                ).json()
+            except PlatformAPIError:
+                continue
+            profile = payload.get("business_discovery") or {}
+            if not profile.get("id"):
+                continue
+            followers = (
+                int(profile["followers_count"])
+                if profile.get("followers_count") is not None
+                else None
+            )
+            recent_posts = [
+                self._normalize_business_media(item, profile)
+                .model_dump(mode="json")
+                for item in (profile.get("media") or {}).get("data", [])
+                if item.get("id")
+            ]
+            creators.append(
+                {
+                    "platform": "instagram",
+                    "external_creator_id": str(profile.get("id")),
+                    "username": profile.get("username") or username,
+                    "name": profile.get("name")
+                    or profile.get("username")
+                    or username,
+                    "description": profile.get("biography"),
+                    "follower_count": followers,
+                    "following_count": int(profile.get("follows_count") or 0),
+                    "media_count": int(profile.get("media_count") or 0),
+                    "profile_url": (
+                        "https://www.instagram.com/"
+                        f"{profile.get('username') or username}/"
+                    ),
+                    "thumbnail_url": profile.get("profile_picture_url"),
+                    "recent_posts": recent_posts,
+                    "latest_content": recent_posts[0] if recent_posts else None,
+                    "data_source": "instagram_hashtag_and_business_discovery",
+                    "metric_availability": {
+                        "followers": "official_business_discovery_metadata",
+                        "likes": (
+                            "official_business_discovery_media_metadata_when_visible"
+                        ),
+                        "comments": (
+                            "official_business_discovery_media_metadata_when_visible"
+                        ),
+                        "views": (
+                            "not_exposed_for_other_creators_by_business_discovery"
+                        ),
+                    },
+                }
+            )
+            if len(creators) >= candidate_limit:
+                break
+        return creators
+
+    def list_creator_posts_by_username(
+        self,
+        *,
+        ig_user_id: str,
+        access_token: str,
+        username: str,
+        limit: int = 5,
+    ) -> list[NormalizedVideo]:
+        creators = self.discover_creators(
+            ig_user_id=ig_user_id,
+            access_token=access_token,
+            usernames=[username],
+            hashtags=[],
+            max_creators=1,
+            recent_posts_per_creator=min(max(limit, 1), 10),
+        )
+        if not creators:
+            raise PlatformAPIError(
+                "Instagram professional creator was not found or Business "
+                "Discovery access is unavailable"
+            )
+        return [
+            NormalizedVideo.model_validate(item)
+            for item in creators[0].get("recent_posts", [])
+        ]
+
+    def _normalize_business_media(
+        self,
+        item: dict[str, Any],
+        profile: dict[str, Any],
+    ) -> NormalizedVideo:
+        published = item.get("timestamp")
+        parsed = (
+            datetime.fromisoformat(published.replace("Z", "+00:00"))
+            if published
+            else None
+        )
+        followers = (
+            int(profile["followers_count"])
+            if profile.get("followers_count") is not None
+            else None
+        )
+        likes = (
+            int(item["like_count"])
+            if item.get("like_count") is not None
+            else None
+        )
+        comments = (
+            int(item["comments_count"])
+            if item.get("comments_count") is not None
+            else None
+        )
+        caption = item.get("caption") or ""
+        return NormalizedVideo(
+            platform="instagram",
+            external_video_id=str(item["id"]),
+            canonical_url=item.get("permalink") or "",
+            creator_external_id=str(profile.get("id")),
+            creator_name=profile.get("username") or profile.get("name"),
+            creator_follower_count=followers,
+            title=caption.splitlines()[0][:200] if caption else None,
+            caption=caption or None,
+            published_at=parsed,
+            thumbnail_url=item.get("thumbnail_url"),
+            data_source="instagram_business_discovery",
+            data_confidence=0.78,
+            metrics=SourceMetricsIn(
+                views=None,
+                likes=likes,
+                comments=comments,
+                engagement_rate=(
+                    ((likes or 0) + (comments or 0)) / followers
+                    if followers
+                    else None
+                ),
+                status_codes={
+                    "views": "not_exposed_for_other_creator_media",
+                    "likes": "available_when_visible",
+                    "comments": "available_when_visible",
+                },
+            ),
+            raw_response=item,
+        )
+
 
     def discover_trends(self, limit: int = 30) -> list[NormalizedVideo]:
         return []

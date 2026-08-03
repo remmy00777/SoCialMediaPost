@@ -32,6 +32,7 @@ from app.models import (
     BrandProfile,
     ContentConcept,
     ContentPackage,
+    Creator,
     ErrorEvent,
     Experiment,
     ExperimentAssignment,
@@ -63,6 +64,7 @@ from app.schemas import (
     ApprovalRequest,
     AuthorizedMediaCaptureRequest,
     CreatorWatchRequest,
+    CreatorDiscoveryRequest,
     BrandProfileRequest,
     ExperimentRequest,
     ImportVideoRequest,
@@ -75,6 +77,7 @@ from app.schemas import (
 from app.services.analytics import multi_objective_performance, normalized_post_metrics
 from app.services.authorized_media import AuthorizedMediaError, AuthorizedMediaService
 from app.services.creator_watch import CreatorWatchError, CreatorWatchService
+from app.services.creator_discovery import CreatorDiscoveryError, CreatorDiscoveryService
 from app.services.audit import record_audit
 from app.services.experiments import deterministic_assignment
 from app.services.media_validation import probe_media
@@ -331,6 +334,113 @@ def import_trend(payload: ImportVideoRequest, db: Session = Depends(get_db), _: 
     return {"candidate_id": candidate.id, "video_id": source.id, "score": score_result.model_dump()}
 
 
+@router.post("/creator-discovery/run", dependencies=[Depends(csrf_protected)])
+def start_creator_discovery(
+    payload: CreatorDiscoveryRequest,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    service = CreatorDiscoveryService(db)
+    user_id = user.id if user else None
+    run = service.create_run(payload, user_id)
+    if settings.celery_enabled:
+        from app.worker import creator_discovery_job
+
+        task = creator_discovery_job.delay(
+            run.id,
+            payload.model_dump(mode="json"),
+            user_id,
+        )
+        return {
+            "run_id": run.id,
+            "status": "queued",
+            "task_id": task.id,
+        }
+    return service.execute(run.id, payload, user_id)
+
+
+@router.get("/creator-discovery/runs/{run_id}")
+def creator_discovery_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    _: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    run = db.get(WorkflowRun, run_id)
+    if not run or run.workflow_type != "creator_discovery":
+        raise HTTPException(404, "Creator discovery run was not found")
+    return serialize_model(run)
+
+
+@router.get("/creator-discovery/results")
+def creator_discovery_results(
+    platform: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User | None = Depends(current_user),
+) -> list[dict[str, Any]]:
+    creators = db.execute(
+        select(Creator).where(Creator.deleted_at.is_(None))
+    ).scalars().all()
+    results: list[dict[str, Any]] = []
+    for creator in creators:
+        data = dict(creator.raw_data or {})
+        if data.get("discovery_type") != "top_creator":
+            continue
+        if platform and creator.platform != platform:
+            continue
+        latest = data.get("latest_content") or {}
+        results.append(
+            {
+                "id": creator.id,
+                "platform": creator.platform,
+                "external_creator_id": creator.external_creator_id,
+                "name": creator.name,
+                "username": data.get("username"),
+                "follower_count": creator.follower_count,
+                "profile_url": data.get("profile_url"),
+                "thumbnail_url": data.get("thumbnail_url"),
+                "rank": data.get("rank"),
+                "creator_score": data.get("creator_score"),
+                "score_components": data.get("score_components"),
+                "missing_metrics": data.get("missing_metrics"),
+                "recent_median_views": data.get("recent_median_views"),
+                "recent_median_engagement": data.get(
+                    "recent_median_engagement"
+                ),
+                "breakout_post_count": data.get("breakout_post_count"),
+                "latest_content": latest,
+                "latest_candidate_id": data.get("latest_candidate_id"),
+                "discovered_at": data.get("discovered_at"),
+                "metric_availability": data.get("metric_availability"),
+            }
+        )
+    results.sort(
+        key=lambda item: (
+            str(item.get("platform")),
+            int(item.get("rank") or 999999),
+        )
+    )
+    return results[:limit]
+
+
+@router.post(
+    "/creator-discovery/{creator_id}/prepare-latest",
+    dependencies=[Depends(csrf_protected)],
+)
+def prepare_creator_latest(
+    creator_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(current_user),
+) -> dict[str, Any]:
+    try:
+        return CreatorDiscoveryService(db).prepare_creator_latest(
+            creator_id,
+            user.id if user else None,
+        )
+    except CreatorDiscoveryError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.get("/creator-watchlist")
 def list_creator_watchlist(
     db: Session = Depends(get_db),
@@ -379,9 +489,10 @@ def create_creator_watch(
         label=payload.creator_name,
         active=True,
         limitations=(
-            "YouTube supports official upload polling. Instagram and TikTok require "
-            "creator authorization or a licensed media feed. Full media is acquired only "
-            "from an allowlisted authorized delivery host."
+            "YouTube supports official upload polling. Instagram Professional creators "
+            "can be polled by username through official Business Discovery when the connected "
+            "account and app have the required permissions. Full media is acquired only from "
+            "an allowlisted authorized delivery host."
         ),
         configuration=configuration,
     )

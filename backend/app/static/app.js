@@ -1,7 +1,7 @@
 const api = '/api';
 const pages = [
   ['Core','dashboard','◫','Dashboard'],['Core','onboarding','◎','Onboarding'],['Core','accounts','⌁','Connected Accounts'],
-  ['Intelligence','trends','↗','Trend Explorer'],['Intelligence','creator-watch','◌','Creator Watchlist'],['Intelligence','trend-detail','◉','Trend Detail'],['Intelligence','concepts','✦','Content Concepts'],
+  ['Intelligence','trends','↗','Trend Explorer'],['Intelligence','creator-discovery','★','Top Creator Discovery'],['Intelligence','creator-watch','◌','Creator Watchlist'],['Intelligence','trend-detail','◉','Trend Detail'],['Intelligence','concepts','✦','Content Concepts'],
   ['Production','studio','▣','Content Studio'],['Production','preview','▶','Video Preview'],['Production','review','✓','Review & Approval'],['Production','ready','⇩','Ready to Post'],
   ['Publishing','calendar','◷','Publishing Calendar'],['Publishing','published','●','Published Content'],
   ['Learning','analytics','⌁','Analytics'],['Learning','comparison','⇄','Cross-platform'],['Learning','experiments','⚗','Experiments'],
@@ -29,6 +29,7 @@ async function uploadRequest(path, formData){
 }
 function notify(message,error=false){const el=q('#notice');el.textContent=message;el.classList.remove('hidden');el.style.borderColor=error?'rgba(255,107,122,.45)':'rgba(140,123,255,.35)';setTimeout(()=>el.classList.add('hidden'),6000)}
 function fmtBytes(bytes=0){const units=['B','KB','MB','GB','TB'];let i=0,n=Number(bytes||0);while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`}
+function fmtNumber(value){const number=Number(value||0);return new Intl.NumberFormat('en-US',{notation:number>=1000000?'compact':'standard',maximumFractionDigits:1}).format(number)}
 function nav(){let last='';q('#nav').innerHTML=pages.map(([group,id,icon,label])=>{const head=group!==last?`<div class="nav-group">${esc(group)}</div>`:'';last=group;return head+`<a class="nav-link ${state.page===id?'active':''}" href="#${id}" data-page="${id}"><span class="nav-icon">${icon}</span><span>${esc(label)}</span></a>`}).join('');q('#nav').onclick=e=>{const a=e.target.closest('[data-page]');if(a){e.preventDefault();location.hash=a.dataset.page}}}
 function setTitle(title,kicker='OPERATIONS'){q('#section-title').textContent=title;q('#section-kicker').textContent=kicker}
 function card(title,body,klass=''){return `<article class="card ${klass}"><h2>${esc(title)}</h2>${body}</article>`}
@@ -188,6 +189,120 @@ async function accounts(){
   });
 }
 
+async function waitForCreatorDiscovery(runId){
+  for(let attempt=0;attempt<180;attempt++){
+    const run=await request(`/creator-discovery/runs/${runId}`);
+    if(['succeeded','failed'].includes(run.status)) return run;
+    await new Promise(resolve=>setTimeout(resolve,5000));
+  }
+  throw new Error('Creator discovery is still running. Refresh this page in a few minutes.');
+}
+
+async function creatorDiscovery(){
+  setTitle('Top Creator Discovery','YOUTUBE AND INSTAGRAM');
+  const [rows,brand]=await Promise.all([
+    request('/creator-discovery/results?limit=200'),
+    request('/brand-profile')
+  ]);
+  const defaultQuery=brand.niche||'technology';
+  const form=`
+    <form id="creator-discovery-form" class="form-grid">
+      <div class="field">
+        <label>Platforms</label>
+        <select name="platform">
+          <option value="both">YouTube and Instagram</option>
+          <option value="youtube">YouTube only</option>
+          <option value="instagram">Instagram only</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Top creators per platform</label>
+        <input type="number" name="top_n" min="1" max="100" value="100">
+      </div>
+      <div class="field full">
+        <label>Niche or YouTube search query</label>
+        <input name="query" value="${esc(defaultQuery)}" required>
+      </div>
+      <div class="field full">
+        <label>Instagram hashtags, comma separated</label>
+        <input name="hashtags" value="viral,reels,trending,explorepage">
+        <small class="muted">Instagram discovery uses permitted hashtag media to find Professional creators, then enriches them through Business Discovery.</small>
+      </div>
+      <div class="field full">
+        <label>Optional Instagram Professional usernames, comma separated</label>
+        <textarea name="instagram_usernames" placeholder="creatorone, creatortwo"></textarea>
+      </div>
+      <div class="field">
+        <label>Recent posts per creator</label>
+        <input type="number" name="recent_posts_per_creator" min="1" max="10" value="10">
+      </div>
+      <div class="field">
+        <label><input type="checkbox" name="import_latest_as_trends" checked> Prepare each creator's latest post for analysis</label>
+      </div>
+      <div class="field full">
+        <button type="submit">Search and rank top creators</button>
+      </div>
+    </form>`;
+
+  q('#content').innerHTML=
+    hero('Search official platform metadata, rank up to 100 creators per platform, extract each latest public content link, and create analysis candidates. Full platform video files are not downloaded; editing the complete clip still requires authorized source media.')+
+    card('Discovery Configuration',form,'full')+
+    card('Ranked Creator Results',table(rows,[
+      ['Rank',row=>`#${esc(row.rank||'–')}`],
+      ['Platform','platform'],
+      ['Creator',row=>`<strong>${esc(row.name||row.username||'Unknown')}</strong><br><small class="muted">${esc(row.username?`@${row.username}`:row.external_creator_id)}</small>`],
+      ['Followers',row=>fmtNumber(row.follower_count)],
+      ['Score',row=>`<span class="tag">${Number(row.creator_score||0).toFixed(1)}</span>`],
+      ['Recent median views',row=>row.platform==='instagram'?'Not exposed':fmtNumber(row.recent_median_views)],
+      ['Latest content',row=>row.latest_content?.canonical_url?`<a href="${esc(row.latest_content.canonical_url)}" target="_blank" rel="noopener">Open latest</a>`:'Unavailable'],
+      ['Action',row=>`<button class="secondary" data-prepare-creator="${esc(row.id)}">Analyze and edit</button>`]
+    ]),'full');
+
+  q('#creator-discovery-form').onsubmit=async event=>{
+    event.preventDefault();
+    const data=new FormData(event.target);
+    const split=name=>String(data.get(name)||'').split(',').map(value=>value.trim().replace(/^[@#]/,'')).filter(Boolean);
+    const payload={
+      platform:data.get('platform'),
+      query:String(data.get('query')||'').trim()||null,
+      hashtags:split('hashtags'),
+      instagram_usernames:split('instagram_usernames'),
+      top_n:Number(data.get('top_n')||100),
+      recent_posts_per_creator:Number(data.get('recent_posts_per_creator')||10),
+      import_latest_as_trends:data.get('import_latest_as_trends')==='on'
+    };
+    const submit=event.submitter;
+    if(submit){submit.disabled=true;submit.textContent='Discovery queued...'}
+    try{
+      const started=await request('/creator-discovery/run',{method:'POST',body:JSON.stringify(payload)});
+      notify('Creator discovery started. This can take several minutes for 100 creators per platform.');
+      const run=started.status==='queued'?await waitForCreatorDiscovery(started.run_id):started;
+      if(run.status!=='succeeded') throw new Error(run.error_message||'Creator discovery failed');
+      const summary=run.summary||run;
+      notify(`Discovery completed. ${summary.creator_count||0} creators and ${summary.latest_content_candidates||0} latest-content candidates prepared.`);
+      await creatorDiscovery();
+    }catch(error){
+      notify(error.message,true);
+      if(submit){submit.disabled=false;submit.textContent='Search and rank top creators'}
+    }
+  };
+
+  document.querySelectorAll('[data-prepare-creator]').forEach(button=>{
+    button.onclick=async()=>{
+      button.disabled=true;
+      try{
+        const result=await request(`/creator-discovery/${button.dataset.prepareCreator}/prepare-latest`,{method:'POST'});
+        sessionStorage.setItem('selectedTrendCandidate',result.candidate_id);
+        notify('Latest creator content is ready for analysis.');
+        location.hash='trend-detail';
+      }catch(error){
+        notify(error.message,true);
+        button.disabled=false;
+      }
+    };
+  });
+}
+
 async function creatorWatch(){
   setTitle('Creator Watchlist','AUTHORIZED MONITORING');
   const watches = await request('/creator-watchlist');
@@ -208,7 +323,7 @@ async function creatorWatch(){
       </div>
       <div class="field full">
         <label>External creator ID</label>
-        <input name="external_creator_id" placeholder="YouTube channel ID, Instagram professional ID, or TikTok Open ID" required>
+        <input name="external_creator_id" placeholder="YouTube channel ID, Instagram Professional username, or TikTok Open ID" required>
       </div>
       <div class="field full">
         <label>Creator profile URL</label>
@@ -523,7 +638,10 @@ async function detail(){
     return;
   }
 
-  const candidateId = trends[0].candidate_id;
+  const selectedCandidate = sessionStorage.getItem('selectedTrendCandidate');
+  const candidateId = trends.some(item => item.candidate_id === selectedCandidate)
+    ? selectedCandidate
+    : trends[0].candidate_id;
   const [item, media] = await Promise.all([
     request(`/trends/${candidateId}`),
     request(`/trends/${candidateId}/source-media`)
@@ -864,7 +982,7 @@ async function health(){setTitle('API Health','READINESS');const [live,ready,sec
 async function simplePage(id,title,path){setTitle(title,'OPERATIONS');const d=await request(path);q('#content').innerHTML=card(title,Array.isArray(d)?table(d,[['Timestamp',r=>esc(r.created_at||r.occurred_at||'')],['Type',r=>esc(r.event_type||r.level||r.title||'')],['Status',r=>esc(r.status||r.severity||'')],['Detail',r=>esc(r.message||r.action||JSON.stringify(r).slice(0,160))]]):json(d),'full')}
 async function backup(){setTitle('Backup & Restore','DATA PROTECTION');q('#content').innerHTML=hero('Create an encrypted archive of the database, configuration metadata, and managed storage. Restore requires an explicit local command.',`<button data-act="backup">Create Backup</button>`)+card('Backup Policy','<p class="muted">Backups are written under <code>storage/exports/backups</code>. Use <code>scripts/restore.sh</code> for an explicit restore.</p>','full');bindActions()}
 async function generic(title,text){setTitle(title,'CONFIGURATION');q('#content').innerHTML=card(title,`<p class="muted">${esc(text)}</p>`,'full')}
-async function route(){state.page=(location.hash||'#dashboard').slice(1);nav();try{const map={dashboard,onboarding,accounts,'creator-watch':creatorWatch,trends,'trend-detail':detail,concepts:()=>packagesPage('concepts'),studio:()=>packagesPage('studio'),preview:()=>packagesPage('preview'),review:()=>packagesPage('review'),ready:()=>packagesPage('ready'),calendar:()=>packagesPage('calendar'),published:()=>packagesPage('published'),analytics,comparison:analytics,experiments,brand,rules:()=>generic('Content Rules','Manage included and excluded topics, disclosure rules, rights requirements, brand-safety thresholds, and publishing gates through the brand profile and environment configuration.'),schedules,providers,health,jobs:()=>simplePage('jobs','Job History','/workflows'),logs:()=>simplePage('logs','Logs','/audit-events'),notifications:()=>simplePage('notifications','Notifications','/notifications'),security:health,backup,settings:()=>generic('Settings','Runtime configuration is validated from .env. Use the documented environment keys and restart the local stack after changes.')};await (map[state.page]||dashboard)()}catch(e){if(String(e.message).includes('Authentication'))return showAuth();q('#content').innerHTML=`<div class="empty danger-text">${esc(e.message)}</div>`}}
+async function route(){state.page=(location.hash||'#dashboard').slice(1);nav();try{const map={dashboard,onboarding,accounts,'creator-discovery':creatorDiscovery,'creator-watch':creatorWatch,trends,'trend-detail':detail,concepts:()=>packagesPage('concepts'),studio:()=>packagesPage('studio'),preview:()=>packagesPage('preview'),review:()=>packagesPage('review'),ready:()=>packagesPage('ready'),calendar:()=>packagesPage('calendar'),published:()=>packagesPage('published'),analytics,comparison:analytics,experiments,brand,rules:()=>generic('Content Rules','Manage included and excluded topics, disclosure rules, rights requirements, brand-safety thresholds, and publishing gates through the brand profile and environment configuration.'),schedules,providers,health,jobs:()=>simplePage('jobs','Job History','/workflows'),logs:()=>simplePage('logs','Logs','/audit-events'),notifications:()=>simplePage('notifications','Notifications','/notifications'),security:health,backup,settings:()=>generic('Settings','Runtime configuration is validated from .env. Use the documented environment keys and restart the local stack after changes.')};await (map[state.page]||dashboard)()}catch(e){if(String(e.message).includes('Authentication'))return showAuth();q('#content').innerHTML=`<div class="empty danger-text">${esc(e.message)}</div>`}}
 function bindActions(){document.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{const a=b.dataset.act;if(a==='demo')await request('/workflows/demo',{method:'POST'});if(a==='trends')await request('/workflows/trends?max_candidates=10&select_limit=10',{method:'POST'});if(a==='content')await request('/workflows/content?max_items=10',{method:'POST'});if(a==='analytics-demo')await request('/analytics/demo',{method:'POST'});if(a==='backup')await request('/backup',{method:'POST'});notify(`${a.replace('-',' ')} completed.`);await route()}catch(e){notify(e.message,true)}finally{b.disabled=false}})}
 function showAuth(){q('#app').classList.add('hidden');q('#auth-screen').classList.remove('hidden')}
 function showApp(){q('#auth-screen').classList.add('hidden');q('#app').classList.remove('hidden');route()}

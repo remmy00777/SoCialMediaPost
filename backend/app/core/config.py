@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     source_media_max_duration_seconds: int = 180
     authorized_media_hosts: str = ""
     creator_watch_poll_minutes: int = 5
+    creator_discovery_refresh_hours: int = 6
     encryption_key: str | None = None
     keychain_service: str = "com.rcegai.socialmediapost"
 

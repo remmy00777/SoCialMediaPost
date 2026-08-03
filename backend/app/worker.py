@@ -7,6 +7,8 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.services.workflow import WorkflowService
 from app.services.creator_watch import CreatorWatchService
+from app.services.creator_discovery import CreatorDiscoveryService
+from app.schemas import CreatorDiscoveryRequest
 from app.services.publication import PublicationService
 from app.services.scheduler import SchedulerService
 
@@ -42,8 +44,43 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.creator_watch_poll",
         "schedule": crontab(minute=f"*/{max(1, settings.creator_watch_poll_minutes)}"),
     },
+    "creator-discovery-refresh": {
+        "task": "app.worker.creator_discovery_refresh",
+        "schedule": crontab(
+            minute="17",
+            hour=f"*/{max(1, settings.creator_discovery_refresh_hours)}",
+        ),
+    },
 }
 
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(ConnectionError,),
+    retry_backoff=True,
+    retry_jitter=True,
+    max_retries=5,
+)
+def creator_discovery_job(
+    self,
+    run_id: str,
+    payload: dict,
+    user_id: str | None = None,
+):
+    with SessionLocal() as db:
+        request = CreatorDiscoveryRequest.model_validate(payload)
+        return CreatorDiscoveryService(db).execute(
+            run_id,
+            request,
+            user_id,
+        )
+
+
+@celery_app.task(bind=True)
+def creator_discovery_refresh(self):
+    with SessionLocal() as db:
+        return CreatorDiscoveryService(db).refresh_latest_search()
 
 
 @celery_app.task(

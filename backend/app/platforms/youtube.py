@@ -132,6 +132,172 @@ class YouTubeAdapter(PlatformAdapter):
         )
         return [self._normalize(item, source="youtube_most_popular_chart") for item in response.json().get("items", [])]
 
+    def discover_creators(
+        self,
+        *,
+        query: str,
+        max_creators: int = 100,
+        recent_posts_per_creator: int = 10,
+        region: str | None = None,
+        language: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not self.settings.youtube_api_key:
+            raise PlatformAPIError("YouTube API key is required for creator discovery")
+
+        requested = min(max(max_creators, 1), 100)
+        channel_ids: list[str] = []
+        page_token: str | None = None
+
+        while len(channel_ids) < requested:
+            params: dict[str, Any] = {
+                "part": "snippet",
+                "type": "channel",
+                "order": "viewCount",
+                "maxResults": min(50, requested - len(channel_ids)),
+                "key": self.settings.youtube_api_key,
+            }
+            if query.strip():
+                params["q"] = query.strip()
+            if language:
+                params["relevanceLanguage"] = language
+            if page_token:
+                params["pageToken"] = page_token
+
+            payload = self.http.request(
+                "GET",
+                f"{self.api_base}/search",
+                params=params,
+            ).json()
+            for item in payload.get("items", []):
+                channel_id = item.get("id", {}).get("channelId")
+                if channel_id and channel_id not in channel_ids:
+                    channel_ids.append(channel_id)
+            page_token = payload.get("nextPageToken")
+            if not page_token:
+                break
+
+        channel_by_id: dict[str, dict[str, Any]] = {}
+        for start in range(0, len(channel_ids), 50):
+            batch = channel_ids[start : start + 50]
+            payload = self.http.request(
+                "GET",
+                f"{self.api_base}/channels",
+                params={
+                    "part": "snippet,statistics,contentDetails",
+                    "id": ",".join(batch),
+                    "key": self.settings.youtube_api_key,
+                },
+            ).json()
+            for item in payload.get("items", []):
+                channel_by_id[str(item.get("id"))] = item
+
+        video_ids_by_channel: dict[str, list[str]] = {}
+        all_video_ids: list[str] = []
+        post_limit = min(max(recent_posts_per_creator, 1), 10)
+
+        for channel_id in channel_ids:
+            channel = channel_by_id.get(channel_id) or {}
+            uploads_playlist = (
+                channel.get("contentDetails", {})
+                .get("relatedPlaylists", {})
+                .get("uploads")
+            )
+            if not uploads_playlist:
+                continue
+            try:
+                payload = self.http.request(
+                    "GET",
+                    f"{self.api_base}/playlistItems",
+                    params={
+                        "part": "contentDetails",
+                        "playlistId": uploads_playlist,
+                        "maxResults": post_limit,
+                        "key": self.settings.youtube_api_key,
+                    },
+                ).json()
+            except PlatformAPIError:
+                continue
+            ids = [
+                item.get("contentDetails", {}).get("videoId")
+                for item in payload.get("items", [])
+            ]
+            ids = [str(item) for item in ids if item]
+            video_ids_by_channel[channel_id] = ids
+            all_video_ids.extend(ids)
+
+        video_by_id: dict[str, dict[str, Any]] = {}
+        unique_video_ids = list(dict.fromkeys(all_video_ids))
+        for start in range(0, len(unique_video_ids), 50):
+            batch = unique_video_ids[start : start + 50]
+            payload = self.http.request(
+                "GET",
+                f"{self.api_base}/videos",
+                params={
+                    "part": "snippet,statistics,contentDetails",
+                    "id": ",".join(batch),
+                    "key": self.settings.youtube_api_key,
+                },
+            ).json()
+            for item in payload.get("items", []):
+                video_by_id[str(item.get("id"))] = item
+
+        creators: list[dict[str, Any]] = []
+        for channel_id in channel_ids:
+            channel = channel_by_id.get(channel_id)
+            if not channel:
+                continue
+            snippet = channel.get("snippet", {})
+            statistics = channel.get("statistics", {})
+            followers = (
+                int(statistics["subscriberCount"])
+                if statistics.get("subscriberCount") is not None
+                else None
+            )
+            recent_posts: list[dict[str, Any]] = []
+            for video_id in video_ids_by_channel.get(channel_id, []):
+                item = video_by_id.get(video_id)
+                if not item:
+                    continue
+                normalized = self._normalize(
+                    item,
+                    source="youtube_creator_discovery",
+                ).model_copy(
+                    update={"creator_follower_count": followers}
+                )
+                recent_posts.append(normalized.model_dump(mode="json"))
+
+            thumbnails = snippet.get("thumbnails", {})
+            thumbnail = (
+                thumbnails.get("high")
+                or thumbnails.get("medium")
+                or thumbnails.get("default")
+                or {}
+            ).get("url")
+            creators.append(
+                {
+                    "platform": "youtube",
+                    "external_creator_id": channel_id,
+                    "name": snippet.get("title"),
+                    "description": snippet.get("description"),
+                    "follower_count": followers,
+                    "total_views": int(statistics.get("viewCount") or 0),
+                    "video_count": int(statistics.get("videoCount") or 0),
+                    "profile_url": f"https://www.youtube.com/channel/{channel_id}",
+                    "thumbnail_url": thumbnail,
+                    "recent_posts": recent_posts,
+                    "latest_content": recent_posts[0] if recent_posts else None,
+                    "data_source": "youtube_search_channels_and_uploads",
+                    "metric_availability": {
+                        "followers": "official_public_channel_statistic",
+                        "views": "official_public_video_statistic",
+                        "likes": "official_public_video_statistic_when_visible",
+                        "comments": "official_public_video_statistic_when_visible",
+                    },
+                }
+            )
+        return creators
+
+
     def list_creator_uploads(
         self,
         channel_id: str,
